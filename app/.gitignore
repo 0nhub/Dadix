@@ -1,0 +1,54 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Logs & temp
+logs/
+*.log
+npm-debug.log*
+tmp/
+temp/
+
+# Build
+dist/
+build/
+out/
+.next/
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+*.swp
+*.swo
+*~
+
+# Caches
+.eslintcache
+*.tsbuildinfo
+.npm
+
+# Server
+server/uploads/
+*.sqlite
+*.db
+.serverless/
+.webpack/
+dist_electron/
+
+# Next / Vercel
+.vercel
+coverage
+*.pem
+certificates

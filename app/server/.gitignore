@@ -1,0 +1,100 @@
+# Dependency Directories
+node_modules/
+
+# Environment Variables
+.env
+.env.local
+.env.development
+.env.production
+.env.test
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+error.log
+
+# Build Output
+dist/
+build/
+out/
+
+# Temporary Files
+tmp/
+temp/
+
+# Dependency Lock Files
+package-lock.json
+yarn.lock
+
+# Runtime Data
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# Caches
+.npm
+.eslintcache
+.node_repl_history
+
+# IDE/Editor Specific
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS Generated Files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Uploads Directory (if you have user uploads)
+uploads/
+
+# Database Files (if using local database)
+*.sqlite
+*.db
+
+# Backup Files
+*.bak
+*.backup
+
+# Compiled Binary Addons
+build/Release
+
+# Dependency Directories
+jspm_packages/
+
+# TypeScript v1 Declaration Files
+typings/
+
+# TypeScript Cache
+*.tsbuildinfo
+
+# Optional Debugging Files
+debug.log
+
+# Serverless Directories
+.serverless/
+
+# Webpack Build Files
+.webpack/
+
+# Electron-Builder Output
+dist_electron/
+
+# Yarn Specific
+.yarn-integrity
+.yarn/cache
+.yarn/unplugged
+.yarn/build-state.yml
+.yarn/install-state.gz
+.pnp.*
+

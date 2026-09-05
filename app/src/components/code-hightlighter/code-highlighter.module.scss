@@ -1,0 +1,236 @@
+
+.codeWrapper {
+  --prettylights-syntax-dark-bg: #0d1117;
+  --prettylights-syntax-dark-fg: #c9d1d9;
+  --prettylights-syntax-dark-keyword: #ff7b72;
+  --prettylights-syntax-dark-entity: #d2a8ff;
+  --prettylights-syntax-dark-constant: #79c0ff;
+  --prettylights-syntax-dark-string: #a5d6ff;
+  --prettylights-syntax-dark-variable: #ffa657;
+  --prettylights-syntax-dark-comment: #8b949e;
+  --prettylights-syntax-dark-entity-tag: #7ee787;
+  --prettylights-syntax-dark-storage-modifier-import: #c9d1d9;
+  --prettylights-syntax-dark-markup-heading: #1f6feb;
+  --prettylights-syntax-dark-markup-list: #f2cc60;
+  --prettylights-syntax-dark-markup-italic: #c9d1d9;
+  --prettylights-syntax-dark-markup-bold: #c9d1d9;
+  --prettylights-syntax-dark-markup-inserted: #aff5b4;
+  --prettylights-syntax-dark-markup-inserted-bg: #033a16;
+  --prettylights-syntax-dark-markup-deleted: #ffdcd7;
+  --prettylights-syntax-dark-markup-deleted-bg: #67060c;
+
+  --prettylights-syntax-light-bg: #ffffff;
+  --prettylights-syntax-light-fg: #24292e;
+  --prettylights-syntax-light-keyword: #d73a49;
+  --prettylights-syntax-light-entity: #6f42c1;
+  --prettylights-syntax-light-constant: #005cc5;
+  --prettylights-syntax-light-string: #032f62;
+  --prettylights-syntax-light-variable: #e36209;
+  --prettylights-syntax-light-comment: #6a737d;
+  --prettylights-syntax-light-entity-tag: #22863a;
+  --prettylights-syntax-light-storage-modifier-import: #24292e;
+  --prettylights-syntax-light-markup-heading: #005cc5;
+  --prettylights-syntax-light-markup-list: #735c0f;
+  --prettylights-syntax-light-markup-italic: #24292e;
+  --prettylights-syntax-light-markup-bold: #24292e;
+  --prettylights-syntax-light-markup-inserted: #22863a;
+  --prettylights-syntax-light-markup-inserted-bg: #f0fff4;
+  --prettylights-syntax-light-markup-deleted: #b31d28;
+  --prettylights-syntax-light-markup-deleted-bg: #ffeef0;
+}
+
+.codeWrapper {
+  --prettylights-syntax-bg: var(--prettylights-syntax-light-bg);
+  --prettylights-syntax-fg: var(--prettylights-syntax-light-fg);
+  --prettylights-syntax-keyword: var(--prettylights-syntax-light-keyword);
+  --prettylights-syntax-entity: var(--prettylights-syntax-light-entity);
+  --prettylights-syntax-constant: var(--prettylights-syntax-light-constant);
+  --prettylights-syntax-string: var(--prettylights-syntax-light-string);
+  --prettylights-syntax-variable: var(--prettylights-syntax-light-variable);
+  --prettylights-syntax-comment: var(--prettylights-syntax-light-comment);
+  --prettylights-syntax-entity-tag: var(--prettylights-syntax-light-entity-tag);
+  --prettylights-syntax-storage-modifier-import: var(--prettylights-syntax-light-storage-modifier-import);
+  --prettylights-syntax-markup-heading: var(--prettylights-syntax-light-markup-heading);
+  --prettylights-syntax-markup-list: var(--prettylights-syntax-light-markup-list);
+  --prettylights-syntax-markup-italic: var(--prettylights-syntax-light-markup-italic);
+  --prettylights-syntax-markup-bold: var(--prettylights-syntax-light-markup-bold);
+  --prettylights-syntax-markup-inserted: var(--prettylights-syntax-light-markup-inserted);
+  --prettylights-syntax-markup-inserted-bg: var(--prettylights-syntax-light-markup-inserted-bg);
+  --prettylights-syntax-markup-deleted: var(--prettylights-syntax-light-markup-deleted);
+  --prettylights-syntax-markup-deleted-bg: var(--prettylights-syntax-light-markup-deleted-bg);
+}
+
+:global(body.dark){
+  .codeWrapper {
+    --prettylights-syntax-bg: var(--prettylights-syntax-dark-bg);
+    --prettylights-syntax-fg: var(--prettylights-syntax-dark-fg);
+    --prettylights-syntax-keyword: var(--prettylights-syntax-dark-keyword);
+    --prettylights-syntax-entity: var(--prettylights-syntax-dark-entity);
+    --prettylights-syntax-constant: var(--prettylights-syntax-dark-constant);
+    --prettylights-syntax-string: var(--prettylights-syntax-dark-string);
+    --prettylights-syntax-variable: var(--prettylights-syntax-dark-variable);
+    --prettylights-syntax-comment: var(--prettylights-syntax-dark-comment);
+    --prettylights-syntax-entity-tag: var(--prettylights-syntax-dark-entity-tag);
+    --prettylights-syntax-storage-modifier-import: var(--prettylights-syntax-dark-storage-modifier-import);
+    --prettylights-syntax-markup-heading: var(--prettylights-syntax-dark-markup-heading);
+    --prettylights-syntax-markup-list: var(--prettylights-syntax-dark-markup-list);
+    --prettylights-syntax-markup-italic: var(--prettylights-syntax-dark-markup-italic);
+    --prettylights-syntax-markup-bold: var(--prettylights-syntax-dark-markup-bold);
+    --prettylights-syntax-markup-inserted: var(--prettylights-syntax-dark-markup-inserted);
+    --prettylights-syntax-markup-inserted-bg: var(--prettylights-syntax-dark-markup-inserted-bg);
+    --prettylights-syntax-markup-deleted: var(--prettylights-syntax-dark-markup-deleted);
+    --prettylights-syntax-markup-deleted-bg: var(--prettylights-syntax-dark-markup-deleted-bg);
+  }
+}
+@media (prefers-color-scheme: dark){
+  :global(body.systemTheme){
+    .codeWrapper {
+      --prettylights-syntax-bg: var(--prettylights-syntax-dark-bg);
+      --prettylights-syntax-fg: var(--prettylights-syntax-dark-fg);
+      --prettylights-syntax-keyword: var(--prettylights-syntax-dark-keyword);
+      --prettylights-syntax-entity: var(--prettylights-syntax-dark-entity);
+      --prettylights-syntax-constant: var(--prettylights-syntax-dark-constant);
+      --prettylights-syntax-string: var(--prettylights-syntax-dark-string);
+      --prettylights-syntax-variable: var(--prettylights-syntax-dark-variable);
+      --prettylights-syntax-comment: var(--prettylights-syntax-dark-comment);
+      --prettylights-syntax-entity-tag: var(--prettylights-syntax-dark-entity-tag);
+      --prettylights-syntax-storage-modifier-import: var(--prettylights-syntax-dark-storage-modifier-import);
+      --prettylights-syntax-markup-heading: var(--prettylights-syntax-dark-markup-heading);
+      --prettylights-syntax-markup-list: var(--prettylights-syntax-dark-markup-list);
+      --prettylights-syntax-markup-italic: var(--prettylights-syntax-dark-markup-italic);
+      --prettylights-syntax-markup-bold: var(--prettylights-syntax-dark-markup-bold);
+      --prettylights-syntax-markup-inserted: var(--prettylights-syntax-dark-markup-inserted);
+      --prettylights-syntax-markup-inserted-bg: var(--prettylights-syntax-dark-markup-inserted-bg);
+      --prettylights-syntax-markup-deleted: var(--prettylights-syntax-dark-markup-deleted);
+      --prettylights-syntax-markup-deleted-bg: var(--prettylights-syntax-dark-markup-deleted-bg);
+    }
+  }
+}
+
+.codeWrapper {
+  &,
+  :global(.hljs) {
+    color: var(--prettylights-syntax-fg);
+    background: var(--prettylights-syntax-bg);
+  }
+
+  :global(.hljs-doctag),
+  :global(.hljs-keyword),
+  :global(.hljs-meta .hljs-keyword),
+  :global(.hljs-template-tag),
+  :global(.hljs-template-variable),
+  :global(.hljs-type),
+  :global(.hljs-variable.language_) {
+    /* prettylights-syntax-keyword */
+    color: var(--prettylights-syntax-keyword);
+  }
+
+  :global(.hljs-title),
+  :global(.hljs-title.class_),
+  :global(.hljs-title.class_.inherited__),
+  :global(.hljs-title.function_) {
+    /* prettylights-syntax-entity */
+    color: var(--prettylights-syntax-entity);
+  }
+
+  :global(.hljs-attr),
+  :global(.hljs-attribute),
+  :global(.hljs-literal),
+  :global(.hljs-meta),
+  :global(.hljs-number),
+  :global(.hljs-operator),
+  :global(.hljs-variable),
+  :global(.hljs-selector-attr),
+  :global(.hljs-selector-class),
+  :global(.hljs-selector-id) {
+    /* prettylights-syntax-constant */
+    color: var(--prettylights-syntax-constant);
+  }
+
+  :global(.hljs-regexp),
+  :global(.hljs-string),
+  :global(.hljs-meta .hljs-string) {
+    /* prettylights-syntax-string */
+    color: var(--prettylights-syntax-string);
+  }
+
+  :global(.hljs-built_in),
+  :global(.hljs-symbol) {
+    /* prettylights-syntax-variable */
+    color: var(--prettylights-syntax-variable);
+  }
+
+  :global(.hljs-comment),
+  :global(.hljs-code),
+  :global(.hljs-formula) {
+    /* prettylights-syntax-comment */
+    color: var(--prettylights-syntax-comment);
+  }
+
+  :global(.hljs-name),
+  :global(.hljs-quote),
+  :global(.hljs-selector-tag),
+  :global(.hljs-selector-pseudo) {
+    /* prettylights-syntax-entity-tag */
+    color: var(--prettylights-syntax-entity-tag);
+  }
+
+  :global(.hljs-subst) {
+    /* prettylights-syntax-storage-modifier-import */
+    color: var(--prettylights-syntax-storage-modifier-import);
+  }
+
+  :global(.hljs-section) {
+    /* prettylights-syntax-markup-heading */
+    color: var(--prettylights-syntax-markup-heading);
+    font-weight: bold;
+  }
+
+  :global(.hljs-bullet) {
+    /* prettylights-syntax-markup-list */
+    color: var(--prettylights-syntax-markup-list);
+  }
+
+  :global(.hljs-emphasis) {
+    /* prettylights-syntax-markup-italic */
+    color: var(--prettylights-syntax-markup-italic);
+    font-style: italic;
+  }
+
+  :global(.hljs-strong) {
+    /* prettylights-syntax-markup-bold */
+    color: var(--prettylights-syntax-markup-bold);
+    font-weight: bold;
+  }
+
+  :global(.hljs-addition) {
+    /* prettylights-syntax-markup-inserted */
+    color: var(--prettylights-syntax-markup-inserted);
+    background-color: var(--prettylights-syntax-markup-inserted-bg);
+  }
+
+  :global(.hljs-deletion) {
+    /* prettylights-syntax-markup-deleted */
+    color: var(--prettylights-syntax-markup-deleted);
+    background-color: var(--prettylights-syntax-markup-deleted-bg);
+  }
+
+  :global(.hljs-char.escape_),
+  :global(.hljs-link),
+  :global(.hljs-params),
+  :global(.hljs-property),
+  :global(.hljs-punctuation),
+  :global(.hljs-tag) {
+    /* purposely ignored */
+  }
+}
+
+.copyButton {
+  visibility: hidden;
+}
+
+.codeWrapper:hover {
+  .copyButton {
+    visibility: visible;
+  }
+}

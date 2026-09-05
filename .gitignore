@@ -1,0 +1,43 @@
+.DS_Store
+.AppleDouble
+Thumbs.db
+
+# Dependencies and install leftovers
+node_modules/
+node_modules.broken/
+
+# Build / cache
+.next/
+out/
+dist/
+dist-ssr/
+build/
+target/
+*.tsbuildinfo
+.vercel
+coverage/
+
+# Secrets — keep real env files local only
+.env
+.env.*
+!.env.example
+!**/.env.example
+
+# Logs and temp
+*.log
+npm-debug.log*
+logs/
+tmp/
+temp/
+
+# Local databases / desktop files
+*.sqlite
+*.db
+*.dadix
+
+# IDE
+.idea/
+.vscode/
+!.vscode/extensions.json
+*.swp
+*.swo
