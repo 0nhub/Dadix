@@ -1,7 +1,8 @@
 import { cn } from '@/lib/utils';
 import type { TableStyleTheme } from '@/lib/userLocalStorage';
 
-const ROW_NUMBER_SHADOW = 'shadow-[2px_0_6px_-2px_rgba(0,0,0,0.08)]';
+const ROW_NUMBER_SCROLL_EDGE =
+  'group-data-[h-scrolled=true]/hscroll:shadow-[2px_0_8px_-2px_rgba(0,0,0,0.14)]';
 
 export function isRowNumberColumn(columnId: string, index: number): boolean {
   return index === 0 || columnId === 'select';
@@ -13,7 +14,7 @@ export function rowNumberHeaderStickyClassName(
 ): string {
   return cn(
     'sticky left-0 z-[41] shrink-0',
-    ROW_NUMBER_SHADOW,
+    ROW_NUMBER_SCROLL_EDGE,
     tableStyleTheme === 'panel' ? 'bg-muted' : 'bg-muted'
   );
 }
@@ -24,31 +25,17 @@ export function rowNumberBodyStickyClassName(
   rowIndex: number,
   isActiveRow: boolean
 ): string {
-  if (isActiveRow) {
-    return cn('sticky left-0 z-[31] shrink-0 bg-muted', ROW_NUMBER_SHADOW);
-  }
-
-  if (tableStyleTheme === 'lineless') {
-    return cn(
-      'sticky left-0 z-[31] shrink-0',
-      ROW_NUMBER_SHADOW,
-      rowIndex % 2 === 1 ? 'bg-muted/30' : 'bg-background',
-      'group-hover/row:bg-muted/50'
-    );
-  }
-
-  if (tableStyleTheme === 'panel') {
-    return cn(
-      'sticky left-0 z-[31] shrink-0',
-      ROW_NUMBER_SHADOW,
-      rowIndex % 2 === 1 ? 'bg-muted' : 'bg-background',
-      'group-hover/row:bg-muted/50'
-    );
-  }
+  const stripe = isActiveRow
+    ? 'bg-muted'
+    : (tableStyleTheme === 'lineless' || tableStyleTheme === 'panel') &&
+        rowIndex % 2 === 1
+      ? 'bg-muted'
+      : 'bg-background';
 
   return cn(
-    'sticky left-0 z-[31] shrink-0 bg-background',
-    ROW_NUMBER_SHADOW,
-    'group-hover/row:bg-muted/50'
+    'sticky left-0 z-[31] box-border h-[50px] min-h-[50px] shrink-0 rounded-none border-0 border-b border-border',
+    ROW_NUMBER_SCROLL_EDGE,
+    stripe,
+    isActiveRow ? 'group-hover/row:bg-muted' : 'group-hover/row:bg-(--accent-50)'
   );
 }

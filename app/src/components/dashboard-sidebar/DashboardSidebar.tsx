@@ -29,6 +29,7 @@ import { ProjectTablesList } from './ProjectTablesList';
 import { SidebarFooterMenu } from './SidebarFooterMenu';
 import { useRequireRole } from '@/hooks/useRequireRole';
 import { UserLocalStorage } from '@/lib/userLocalStorage';
+import { Input } from '@/components/ui/input';
 
 export function DashboardSidebar({
   ...props
@@ -74,7 +75,7 @@ export function DashboardSidebar({
     <Sidebar
       collapsible='icon'
       {...props}
-      className='shadow-none border-r h-screen px-2 pb-2 pt-0 group-data-[collapsible=icon]:flex group-data-[collapsible=icon]:flex-col group-data-[collapsible=icon]:items-center'
+      className='bg-sidebar shadow-none border-r px-2 pb-4 pt-0 group-data-[collapsible=icon]:flex group-data-[collapsible=icon]:flex-col group-data-[collapsible=icon]:items-center'
     >
       <SidebarHeader className='h-12 min-h-12 flex shrink-0 items-center w-full group-data-[collapsible=icon]:flex group-data-[collapsible=icon]:items-center group-data-[collapsible=icon]:w-auto'>
         <SidebarMenu className='w-full group-data-[collapsible=icon]:flex group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:w-auto'>
@@ -106,7 +107,12 @@ export function DashboardSidebar({
                       className='size-4.5 shrink-0'
                       name={selectedProject.icon}
                     />
-                    <span className='truncate group-data-[collapsible=icon]:hidden'>{selectedProject.title}</span>
+                    <span
+                      data-sidebar-fit-label={selectedProject.title}
+                      className='truncate leading-5 group-data-[collapsible=icon]:hidden'
+                    >
+                      {selectedProject.title}
+                    </span>
                   </div>
                 </SelectTrigger>
                 <SelectContent>
@@ -198,15 +204,15 @@ export function DashboardSidebar({
       </SidebarHeader>
       {sidebarState?.searchVisible && (
         <div className='px-2 pt-2 group-data-[collapsible=icon]:hidden'>
-          <div className='relative flex h-8 items-center gap-1'>
-            <Search className='absolute left-0 size-4 shrink-0 text-muted-foreground pointer-events-none' />
-            <input
+          <div className='relative'>
+            <Search className='pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground' />
+            <Input
               ref={searchInputRef}
               type='text'
               placeholder='Search'
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className='h-8 min-w-0 flex-1 border-0 bg-transparent pl-6 pr-8 text-sm text-foreground placeholder:text-muted-foreground outline-none ring-0'
+              className='h-9 bg-background pl-8 pr-8'
               aria-label='Search tables'
             />
             <button
@@ -216,7 +222,7 @@ export function DashboardSidebar({
                 setDebouncedSearchQuery('');
                 sidebarState?.setSearchVisible(false);
               }}
-              className='absolute right-0 flex size-8 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-secondary hover:text-foreground'
+              className='absolute right-1 top-1/2 flex size-7 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground'
               aria-label='Close search'
             >
               <X className='size-4' />
@@ -227,7 +233,7 @@ export function DashboardSidebar({
       <SidebarContent className='mt-0 gap-0 flex-1 min-h-0 w-full group-data-[collapsible=icon]:flex group-data-[collapsible=icon]:items-center group-data-[collapsible=icon]:flex-col group-data-[collapsible=icon]:w-auto'>
         {dashboardCtx.initialized && (
           <>
-            {currentProjectCtx.initialized ? (
+            {currentProjectCtx.initialized || currentProjectCtx.tables.length > 0 ? (
               <>
                 <ProjectTablesList
                   canEditTables={canEditTables}

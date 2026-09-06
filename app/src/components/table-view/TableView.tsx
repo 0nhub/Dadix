@@ -1,31 +1,36 @@
 import { useEffect, useRef, useState } from 'react';
 import tablesViewStyles from './table-view.module.scss';
 import type { Row, Table } from '@tanstack/react-table';
-import { TableHeaderCell } from './TableHeaderCell';
+import { SortableTableHeaderCell, TableHeaderCell } from './TableHeaderCell';
 import { TableRowCell } from './TableRowCell';
 import { LoadingIndicator } from '../loading-indicator/LoadingIndicator';
 import { cn } from '@/lib/utils';
-import { LucideGripVertical, LucideTrash2 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { LucideGripVertical, LucidePencil, LucideTrash2 } from 'lucide-react';
+import { dadixEvents } from '@/constants/events';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useTableStyle } from '@/context/TableStyleContext';
 import {
   DndContext,
+  DragOverlay,
   closestCenter,
   type DragEndEvent,
-  MouseSensor,
+  type DragStartEvent,
+  PointerSensor,
   TouchSensor,
   useSensor,
   useSensors,
 } from '@dnd-kit/core';
-import { restrictToVerticalAxis } from '@dnd-kit/modifiers';
+import { restrictToHorizontalAxis, restrictToVerticalAxis } from '@dnd-kit/modifiers';
 import {
   SortableContext,
+  horizontalListSortingStrategy,
   useSortable,
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
+import { isRowNumberColumn } from './tableStickyStyles';
 import { CSS } from '@dnd-kit/utilities';
 import { rowNumberBodyStickyClassName } from './tableStickyStyles';
+import { openExternalUrl } from '@/lib/desktopShell';
 
 interface TableViewProps {
   table: Table<Record<string, unknown>>;
@@ -44,6 +49,7 @@ interface TableViewProps {
     size: number;
     tableFieldId: number;
     gridViewFieldId?: number;
+    columnId?: string;
   }) => void;
   onColumnResizeEnd: ({
     ..._props
@@ -51,6 +57,7 @@ interface TableViewProps {
     size: number;
     tableFieldId: number;
     gridViewFieldId?: number;
+    columnId?: string;
   }) => void;
   onDeleteRecord?: (_recordId: string) => void;
   /** Row index to scroll into view (browser find). */
@@ -61,6 +68,8 @@ interface TableViewProps {
   enableRowReorder?: boolean;
   /** Called when a row is dropped at a new index (fromIndex, toIndex). */
   onRowReorder?: (fromIndex: number, toIndex: number) => void;
+  enableColumnReorder?: boolean;
+  onColumnReorder?: (fromHeaderId: string, toHeaderId: string) => void;
 }
 
 export interface ITableRowsCtx {
@@ -75,6 +84,72 @@ export interface ITableRowsCtx {
 }
 
 const itemHeight = 50;
+
+const EDITABLE_CELL_TYPES = new Set([
+  'TEXT',
+  'INTEGER',
+  'DATE',
+  'CHOICE',
+  'BOOLEAN',
+  'FILE',
+]);
+
+type CellContextMenu = {
+  x: number;
+  y: number;
+  record: Record<string, unknown>;
+  columnId: string;
+  fieldId?: number;
+  fieldName?: string;
+  canEditCell: boolean;
+};
+
+function cellContextFromEvent(
+  e: React.MouseEvent,
+  record: Record<string, unknown>
+): CellContextMenu {
+  const cell = (e.target as HTMLElement).closest('[data-column-id]');
+  const columnId = cell?.getAttribute('data-column-id') ?? '';
+  const fieldIdRaw = cell?.getAttribute('data-field-id');
+  const fieldName = cell?.getAttribute('data-field-name') || undefined;
+  const fieldType = cell?.getAttribute('data-field-type') ?? '';
+  const fieldAction = cell?.getAttribute('data-field-action') ?? 'edit';
+  const fieldId = fieldIdRaw ? Number(fieldIdRaw) : undefined;
+  const canEditCell =
+    !isRowNumberColumn(columnId, -1) &&
+    !columnId.startsWith('view-button-') &&
+    EDITABLE_CELL_TYPES.has(fieldType) &&
+    fieldAction === 'edit';
+  return {
+    x: e.clientX,
+    y: e.clientY,
+    record,
+    columnId,
+    fieldId: Number.isFinite(fieldId) ? fieldId : undefined,
+    fieldName,
+    canEditCell,
+  };
+}
+
+function handleGridRowClick(
+  e: React.MouseEvent,
+  row: Row<Record<string, unknown>>,
+  openRecord: (_record: Record<string, unknown>) => void
+) {
+  e.stopPropagation();
+  const cell = (e.target as HTMLElement).closest('[data-field-action]');
+  if (cell?.getAttribute('data-field-action') === 'openUrl') {
+    openExternalUrl(cell.getAttribute('data-cell-value') ?? '');
+    return;
+  }
+  openRecord(row.original);
+}
+
+const cellMenuItemClassName =
+  "relative flex w-full cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm leading-5 outline-none hover:bg-accent hover:text-accent-foreground [&_svg:not([class*='text-'])]:text-muted-foreground hover:[&_svg:not([class*='text-'])]:text-current [&_svg:not([class*='size-'])]:size-4 [&_svg]:shrink-0";
+
+const cellMenuDeleteClassName =
+  "data-[variant=destructive]:hover:bg-destructive/10 data-[variant=destructive]:hover:text-destructive data-[variant=destructive]:hover:[&_svg]:!text-destructive";
 
 export function TableView({
   table,
@@ -94,6 +169,8 @@ export function TableView({
   bodyRowCellClassName,
   enableRowReorder = false,
   onRowReorder,
+  enableColumnReorder = false,
+  onColumnReorder,
   ...props
 }: React.HTMLAttributes<HTMLDivElement> & TableViewProps) {
   const { theme: tableStyleTheme } = useTableStyle();
@@ -103,11 +180,36 @@ export function TableView({
   const firstVisibleRowIndexRef = useRef<number>(0);
 
   const [firstVisibleRowIndex, setFirstVisibleRowIndex] = useState<number>(0);
-  const [contextMenu, setContextMenu] = useState<{
-    x: number;
-    y: number;
-    record: Record<string, unknown>;
-  } | null>(null);
+  const [isHorizontallyScrolled, setIsHorizontallyScrolled] = useState(false);
+  const [activeColumnHeaderId, setActiveColumnHeaderId] = useState<string | null>(
+    null
+  );
+  const [liveColumnSizes, setLiveColumnSizes] = useState<Record<string, number>>(
+    {}
+  );
+
+  const handleLiveResizeChange = (props: {
+    size: number;
+    tableFieldId: number;
+    gridViewFieldId?: number;
+    columnId?: string;
+  }) => {
+    const key = props.columnId ?? String(props.gridViewFieldId ?? props.tableFieldId);
+    setLiveColumnSizes((prev) =>
+      prev[key] === props.size ? prev : { ...prev, [key]: props.size }
+    );
+  };
+
+  const handleLiveResizeEnd = (props: {
+    size: number;
+    tableFieldId: number;
+    gridViewFieldId?: number;
+    columnId?: string;
+  }) => {
+    handleLiveResizeChange(props);
+    onColumnResizeEnd(props);
+  };
+  const [contextMenu, setContextMenu] = useState<CellContextMenu | null>(null);
 
   useEffect(() => {
     if (!contextMenu) return;
@@ -260,7 +362,7 @@ export function TableView({
 
   const allRows = table?.getPrePaginationRowModel().rows ?? [];
   const dndSensors = useSensors(
-    useSensor(MouseSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
     useSensor(TouchSensor, { activationConstraint: { delay: 100, tolerance: 5 } })
   );
 
@@ -272,12 +374,57 @@ export function TableView({
     if (fromIndex >= 0 && toIndex >= 0) onRowReorder(fromIndex, toIndex);
   };
 
+  const headerGroup = table.getHeaderGroups()[0];
+  const sortableColumnIds = (headerGroup?.headers ?? [])
+    .filter((header, idx) => {
+      const meta = header.column.columnDef.meta as Record<string, unknown> | undefined;
+      return !isRowNumberColumn(header.column.id, idx) && !meta?.isViewButton;
+    })
+    .map((header) => `col-${header.id}`);
+
+  const handleColumnDragStart = (event: DragStartEvent) => {
+    setActiveColumnHeaderId(String(event.active.id).replace(/^col-/, ''));
+    window.dispatchEvent(new Event('dadix-column-drag-start'));
+  };
+
+  const handleColumnDragEnd = (event: DragEndEvent) => {
+    setActiveColumnHeaderId(null);
+    const { active, over } = event;
+    if (!over || !onColumnReorder || active.id === over.id) return;
+    const fromHeaderId = String(active.id).replace(/^col-/, '');
+    const toHeaderId = String(over.id).replace(/^col-/, '');
+    onColumnReorder(fromHeaderId, toHeaderId);
+  };
+
+  const columnSensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 180, tolerance: 8 } })
+  );
+
+  const activeColumnHeader = (headerGroup?.headers ?? []).find(
+    (header) =>
+      header.id === activeColumnHeaderId ||
+      header.column.id === activeColumnHeaderId
+  );
+  const activeColumnMeta = activeColumnHeader?.column.columnDef.meta as
+    | Record<string, unknown>
+    | undefined;
+  const activeColumnWidth = activeColumnHeader?.column.columnDef.size ?? 140;
+  const activeColumnName = String(
+    activeColumnMeta?.fieldName ?? activeColumnMeta?.name ?? ''
+  );
+
   return (
     <div {...props} data-table-style={tableStyleTheme}>
       <div
         ref={scrollContainerRef}
         aria-description='Table'
-        className={`${tablesViewStyles.scrollContainer} relative w-full max-w-full h-full max-h-full overflow-auto`}
+        data-h-scrolled={isHorizontallyScrolled ? 'true' : undefined}
+        className={`${tablesViewStyles.scrollContainer} group/hscroll relative isolate w-full max-w-full h-full max-h-full overflow-auto [overflow-anchor:none]`}
+        onScroll={(evnt) => {
+          const scrolled = evnt.currentTarget.scrollLeft > 0;
+          setIsHorizontallyScrolled((prev) => (prev === scrolled ? prev : scrolled));
+        }}
         onWheelCapture={(evnt) => {
           if (evnt.deltaY <= 0) {
             return;
@@ -305,25 +452,72 @@ export function TableView({
             className={cn([
               'inline-flex flex-row flex-nowrap items-stretch justify-start h-[45px]',
               tableStyleTheme === 'lineless' && 'bg-muted/50 border-b border-border',
-              tableStyleTheme !== 'lineless' && 'bg-muted border border-l-0',
-              'first-of-type:rounded-tl-md group-[*]/no-left-radius:rounded-tl-none! last-of-type:rounded-tr-md',
+              tableStyleTheme !== 'lineless' && 'bg-muted border-t-0 border-b border-r border-border',
+              'rounded-none',
               headerRowClassName || '',
             ])}
           >
-            {table.getHeaderGroups()[0].headers.map((header, idx) => (
-              <TableHeaderCell
-                key={header.id}
-                table={table}
-                tableId={tableId}
-                header={header}
-                idx={idx}
-                viewId={viewId}
-                onColumnResizeChange={onColumnResizeChange}
-                onColumnResizeEnd={onColumnResizeEnd}
-                className={headerRowCellClassName}
-                tableStyleTheme={tableStyleTheme}
-              />
-            ))}
+            {enableColumnReorder && onColumnReorder ? (
+              <DndContext
+                collisionDetection={closestCenter}
+                modifiers={[restrictToHorizontalAxis]}
+                onDragStart={handleColumnDragStart}
+                onDragCancel={() => setActiveColumnHeaderId(null)}
+                onDragEnd={handleColumnDragEnd}
+                sensors={columnSensors}
+              >
+                <SortableContext
+                  items={sortableColumnIds}
+                  strategy={horizontalListSortingStrategy}
+                >
+                  {table.getHeaderGroups()[0].headers.map((header, idx) => (
+                    <SortableTableHeaderCell
+                      key={header.id}
+                      table={table}
+                      tableId={tableId}
+                      header={header}
+                      idx={idx}
+                      viewId={viewId}
+                      liveWidth={liveColumnSizes[header.column.id]}
+                      onColumnResizeChange={handleLiveResizeChange}
+                      onColumnResizeEnd={handleLiveResizeEnd}
+                      className={headerRowCellClassName}
+                      tableStyleTheme={tableStyleTheme}
+                    />
+                  ))}
+                </SortableContext>
+                <DragOverlay dropAnimation={null}>
+                  {activeColumnHeader ? (
+                    <div
+                      className='flex h-[45px] items-center rounded-md border bg-muted px-2.5 text-sm font-medium shadow-md'
+                      style={{
+                        width: activeColumnWidth,
+                        minWidth: activeColumnWidth,
+                        maxWidth: activeColumnWidth,
+                      }}
+                    >
+                      <span className='truncate'>{activeColumnName}</span>
+                    </div>
+                  ) : null}
+                </DragOverlay>
+              </DndContext>
+            ) : (
+              table.getHeaderGroups()[0].headers.map((header, idx) => (
+                <TableHeaderCell
+                  key={header.id}
+                  table={table}
+                  tableId={tableId}
+                  header={header}
+                  idx={idx}
+                  viewId={viewId}
+                  liveWidth={liveColumnSizes[header.column.id]}
+                  onColumnResizeChange={handleLiveResizeChange}
+                  onColumnResizeEnd={handleLiveResizeEnd}
+                  className={headerRowCellClassName}
+                  tableStyleTheme={tableStyleTheme}
+                />
+              ))
+            )}
           </div>
         </div>
         <div
@@ -342,10 +536,9 @@ export function TableView({
           className='tableViewBody flex flex-col justify-start items-start'
           style={{
             position: 'relative',
-            top: '0',
-            left: '0',
-            zIndex: '0',
-            transform: `translate3d(0px, ${
+            zIndex: 0,
+            // marginTop, not transform — transform breaks position:sticky
+            marginTop: `${
               itemHeight *
               Math.max(
                 0,
@@ -356,7 +549,7 @@ export function TableView({
                       (firstVisibleRowIndex - numberOfHiddenRowsRef.current)
                   )
               )
-            }px, 0px)`,
+            }px`,
           }}
         >
           {table && (
@@ -404,6 +597,7 @@ export function TableView({
                         setContextMenu={setContextMenu}
                         bodyRowCellClassName={bodyRowCellClassName}
                         findHighlight={findHighlight}
+                        liveColumnSizes={liveColumnSizes}
                         showDragHandle
                       />
                     ))}
@@ -429,21 +623,17 @@ export function TableView({
                     ])}
                     style={{
                       background:
-                        `${activeRecordId}` === `${row.id}` ? 'var(--muted)' : undefined,
+                        `${activeRecordId}` === `${row.id}`
+                          ? 'var(--muted)'
+                          : undefined,
                       height: `${itemHeight}px`,
                     }}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      openRecord(row.original);
-                    }}
+                    onClick={(e) => handleGridRowClick(e, row, openRecord)}
                     onContextMenu={(e) => {
                       e.preventDefault();
-                      if (onDeleteRecord) {
-                        setContextMenu({
-                          x: e.clientX,
-                          y: e.clientY,
-                          record: row.original,
-                        });
+                      const next = cellContextFromEvent(e, row.original);
+                      if (next.canEditCell || onDeleteRecord) {
+                        setContextMenu(next);
                       }
                     }}
                   >
@@ -455,6 +645,7 @@ export function TableView({
                         cellIdx={cellIdx}
                         activeRecordId={activeRecordId}
                         row={row}
+                        liveWidth={liveColumnSizes[cell.column.id]}
                         className={bodyRowCellClassName}
                         tableStyleTheme={tableStyleTheme}
                         isFindHighlight={
@@ -471,24 +662,52 @@ export function TableView({
           )}
         </div>
       </div>
-      {contextMenu && onDeleteRecord && (
+      {contextMenu && (contextMenu.canEditCell || onDeleteRecord) && (
         <div
           className='fixed z-[100] min-w-32 rounded-md border bg-popover p-1 text-popover-foreground shadow-md'
           style={{ left: contextMenu.x, top: contextMenu.y }}
           onClick={(e) => e.stopPropagation()}
         >
-          <Button
-            variant='ghost'
-            className='w-full justify-start text-destructive hover:bg-destructive/10 hover:text-destructive'
-            size='sm'
-            onClick={() => {
-              onDeleteRecord(String(contextMenu.record.id));
-              setContextMenu(null);
-            }}
-          >
-            <LucideTrash2 className='mr-2 size-4' />
-            Delete
-          </Button>
+          {contextMenu.canEditCell && (
+            <button
+              type='button'
+              data-slot='dropdown-menu-item'
+              data-cell-menu-item='edit'
+              className={cellMenuItemClassName}
+              onClick={() => {
+                window.dispatchEvent(
+                  new CustomEvent(dadixEvents.recordEvents.onEditCell, {
+                    detail: {
+                      recordId: contextMenu.record.id,
+                      fieldId: contextMenu.fieldId,
+                      fieldName: contextMenu.fieldName,
+                      columnId: contextMenu.columnId,
+                    },
+                  })
+                );
+                setContextMenu(null);
+              }}
+            >
+              <LucidePencil />
+              Edit
+            </button>
+          )}
+          {onDeleteRecord && (
+            <button
+              type='button'
+              data-slot='dropdown-menu-item'
+              data-variant='destructive'
+              data-cell-menu-item='delete'
+              className={`${cellMenuItemClassName} ${cellMenuDeleteClassName}`}
+              onClick={() => {
+                onDeleteRecord(String(contextMenu.record.id));
+                setContextMenu(null);
+              }}
+            >
+              <LucideTrash2 />
+              Delete
+            </button>
+          )}
         </div>
       )}
     </div>
@@ -507,6 +726,7 @@ function SortableTableViewRow({
   setContextMenu,
   bodyRowCellClassName,
   findHighlight,
+  liveColumnSizes,
   showDragHandle,
 }: {
   row: Row<Record<string, unknown>>;
@@ -517,9 +737,10 @@ function SortableTableViewRow({
   activeRecordId: string;
   openRecord: (_r: Record<string, unknown>) => void;
   onDeleteRecord?: (_id: string) => void;
-  setContextMenu: (_m: { x: number; y: number; record: Record<string, unknown> } | null) => void;
+  setContextMenu: (_m: CellContextMenu | null) => void;
   bodyRowCellClassName?: string;
   findHighlight?: { rowIndex: number; columnId: string } | null;
+  liveColumnSizes: Record<string, number>;
   showDragHandle: boolean;
 }) {
   const {
@@ -551,23 +772,20 @@ function SortableTableViewRow({
       ])}
       style={{
         background:
-          `${activeRecordId}` === `${row.id}` ? 'var(--muted)' : undefined,
+          `${activeRecordId}` === `${row.id}`
+            ? 'var(--muted)'
+            : undefined,
         height: `${itemHeight}px`,
-        transform: CSS.Transform.toString(transform),
-        transition,
+        ...(isDragging && transform
+          ? { transform: CSS.Transform.toString(transform), transition }
+          : {}),
       }}
-      onClick={(e) => {
-        e.stopPropagation();
-        openRecord(row.original);
-      }}
+      onClick={(e) => handleGridRowClick(e, row, openRecord)}
       onContextMenu={(e) => {
         e.preventDefault();
-        if (onDeleteRecord) {
-          setContextMenu({
-            x: e.clientX,
-            y: e.clientY,
-            record: row.original,
-          });
+        const next = cellContextFromEvent(e, row.original);
+        if (next.canEditCell || onDeleteRecord) {
+          setContextMenu(next);
         }
       }}
     >
@@ -580,7 +798,7 @@ function SortableTableViewRow({
               key={cell.id}
               onClick={(e) => e.stopPropagation()}
               className={cn(
-                'relative h-[40px] inline-flex flex-row justify-center items-center overflow-hidden group/rowcheckboxgroup border-l first-of-type:rounded-bl-md',
+                'relative box-border h-[50px] min-h-[50px] self-stretch inline-flex flex-row justify-center items-center overflow-hidden group/rowcheckboxgroup rounded-none border-0 bg-background',
                 rowNumberBodyStickyClassName(
                   tableStyleTheme as 'classic' | 'lineless' | 'panel',
                   row.index,
@@ -627,6 +845,7 @@ function SortableTableViewRow({
             cellIdx={cellIdx}
             activeRecordId={activeRecordId}
             row={row}
+            liveWidth={liveColumnSizes[cell.column.id]}
             className={bodyRowCellClassName}
             tableStyleTheme={tableStyleTheme}
             isFindHighlight={

@@ -1,8 +1,6 @@
 import { useState } from 'react';
 
-import { Button } from '@/components/ui/button';
 import { LucidePlus } from 'lucide-react';
-import { LoadingIndicator } from '@/components/loading-indicator/LoadingIndicator';
 
 import { toast } from 'sonner';
 import { openTableRecord } from '@/components/table-cell-viewer';
@@ -65,18 +63,15 @@ export function CreateNewRecordButton({
   };
 
   return (
-    <Button
-      variant={variant}
-      size='icon'
+    <button
+      type='button'
       disabled={isAddingNewRecord}
       onClick={handleCreateNewRecord}
+      aria-label='New record'
+      className='flex h-full w-full items-center justify-center rounded-none border-0 bg-transparent p-0 text-muted-foreground outline-none hover:bg-foreground/10 hover:text-foreground focus-visible:outline-none disabled:opacity-50'
+      data-variant={variant}
     >
-      {/*{isAddingNewRecord ? (
-        <LoadingIndicator visibilityDelay={false} className='size-3.5' />
-      ) : (
-        <LucidePlus className='size-4.5' />
-      )}*/}
-      <LucidePlus className='size-4.5' />
-    </Button>
+      <LucidePlus className='size-4 shrink-0' />
+    </button>
   );
 }

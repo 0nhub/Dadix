@@ -1,10 +1,17 @@
 import { dadixEvents } from '@/constants/events';
+import { getStoredLocale, t } from './i18n';
 import { callApi } from './api';
 import { ISortingRule } from '@/types';
 import {
+  createLocalView,
+  deleteLocalView,
   findLocalTableById,
+  findLocalView,
+  getLocalViewsForTable,
   isDevTable,
+  patchLocalView,
   tableFieldsToGridViewFields,
+  usesLocalViews,
 } from './dev-demo-data';
 
 async function createView({
@@ -20,6 +27,20 @@ async function createView({
   type: string;
   silent?: boolean;
 }): Promise<Record<string, unknown>> {
+  if (usesLocalViews(tableId)) {
+    const createdView = createLocalView({ tableId, name, icon, type });
+    if (!silent) {
+      window.dispatchEvent(
+        new CustomEvent(dadixEvents.viewEvents.onCreate, {
+          detail: {
+            tableId,
+            createdView: { ...createdView },
+          },
+        })
+      );
+    }
+    return { view: createdView };
+  }
   const response = await callApi.post('/view', {
     tableId,
     name: name.trim(),
@@ -55,6 +76,9 @@ async function getTableViews({
 }: {
   tableId: string;
 }): Promise<Record<string, unknown>> {
+  if (usesLocalViews(tableId)) {
+    return { views: getLocalViewsForTable(tableId) };
+  }
   // get all table views
   const response = await callApi.get(`/view?tableId=${tableId}`);
   if (!response || response.status !== 200 || !response.data) {
@@ -70,12 +94,14 @@ async function getView({
   tableId: string;
   id: number;
 }): Promise<Record<string, unknown>> {
-  if (isDevTable(tableId)) {
+  if (usesLocalViews(tableId) || isDevTable(tableId)) {
+    const local = findLocalView(tableId, id);
+    if (local) return local;
     const table = findLocalTableById(tableId);
     return {
       id,
       tableId,
-      name: 'Alle Einträge',
+      name: t(getStoredLocale(), 'table.allEntries'),
       icon: 'LayoutGrid',
       order: 0,
       filter: '[]',
@@ -108,6 +134,21 @@ async function patchView({
   };
   silent?: boolean;
 }): Promise<Record<string, unknown>> {
+  if (usesLocalViews(tableId)) {
+    const updated = patchLocalView(tableId, id, data);
+    if (!silent && updated) {
+      window.dispatchEvent(
+        new CustomEvent(dadixEvents.viewEvents.onPatch, {
+          detail: {
+            tableId,
+            id,
+            updates: { ...data },
+          },
+        })
+      );
+    }
+    return { view: updated, status: 200 };
+  }
   // update a view
   const response = await callApi.patch(
     `/view/${id}?tableId=${tableId}`,
@@ -143,6 +184,20 @@ async function deleteView({
   id: number;
   silent?: boolean;
 }): Promise<Record<string, unknown>> {
+  if (usesLocalViews(tableId)) {
+    deleteLocalView(tableId, id);
+    if (!silent) {
+      window.dispatchEvent(
+        new CustomEvent(dadixEvents.viewEvents.onDelete, {
+          detail: {
+            tableId,
+            id,
+          },
+        })
+      );
+    }
+    return { success: true };
+  }
   // delete a view
   const response = await callApi.delete(`/view/${id}?tableId=${tableId}`);
   if (!response || response.status !== 200 || !response.data) {

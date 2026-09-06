@@ -55,12 +55,12 @@ export function GridViewFindBar({
         className
       )}
       role='search'
-      aria-label='Find in table'
+      aria-label='Search in table'
     >
       <Input
         ref={inputRef}
         type='text'
-        placeholder='Find'
+        placeholder='Search'
         value={query}
         onChange={(e) => onQueryChange(e.target.value)}
         className='h-8 w-40 border-0 bg-transparent px-2 py-1 text-sm shadow-none focus-visible:ring-0'

@@ -9,10 +9,12 @@ import { toast } from 'sonner';
 import { createNewViewDirect } from '@/lib/view';
 import { useTableContext } from '@/context/TableContext';
 import { useTableViewsContext } from '@/context/TableViewsContext';
+import { useLanguage } from '@/context/LanguageContext';
 
 function AddNewViewForm() {
   const currentTableCtx = useTableContext();
   const tableViewsCtx = useTableViewsContext();
+  const { t } = useLanguage();
   const [isSaving, setIsSaving] = useState(false);
 
   const tableId = currentTableCtx.id ?? tableViewsCtx.tableId;
@@ -32,13 +34,13 @@ function AddNewViewForm() {
         const msg =
           (err as { response?: { data?: { message?: string } }; message?: string })?.response?.data?.message ??
           (err as Error)?.message ??
-          'View konnte nicht erstellt werden.';
+          t('table.viewCreateFailed');
         if (status === 401) {
-          toast.error('Nicht angemeldet', {
-            description: 'Bitte melde dich erneut an und versuche es nochmal.',
+          toast.error(t('table.notSignedIn'), {
+            description: t('table.signInAgain'),
           });
         } else {
-          toast.error('Fehler', { description: msg });
+          toast.error(t('table.error'), { description: msg });
         }
       });
   }

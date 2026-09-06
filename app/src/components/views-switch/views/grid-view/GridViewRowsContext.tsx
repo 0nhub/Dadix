@@ -1,6 +1,7 @@
 'use client';
 
 import { dadixEvents } from '@/constants/events';
+import { renameRecordFieldKey } from '@/lib/fieldNames';
 
 import {
   createContext,
@@ -92,6 +93,7 @@ export function GridViewRowsContextProvider({
     useState<number>(100);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [isLoadingMore, setIsLoadingMore] = useState<boolean>(false);
+  const [sourceReloadNonce, setSourceReloadNonce] = useState(0);
 
   useRequestRelativeRecordHandler({
     tableId: currentGridViewCtx.view?.tableId || undefined,
@@ -322,10 +324,15 @@ export function GridViewRowsContextProvider({
           offset: requestOffset,
           filter,
           order: currentTableSortingRuleRef.current?.[0]?.direction,
-          orderBy: currentGridViewCtx.view.fields.find(
-            (field) =>
-              field.fieldId === currentTableSortingRuleRef.current?.[0]?.fieldId
-          )?.fieldName,
+          orderBy: (() => {
+            const field = currentGridViewCtx.view.fields.find(
+              (item) =>
+                Number(item.fieldId) ===
+                Number(currentTableSortingRuleRef.current?.[0]?.fieldId)
+            );
+            return field?.fieldName ?? field?.name;
+          })(),
+          sort: JSON.stringify(sortingRules),
         })
         .then((res) => {
           if (
@@ -375,7 +382,14 @@ export function GridViewRowsContextProvider({
     currentGridViewCtx.initialized,
     currentGridViewCtx.parsedGlobalAndViewFilters,
     JSON.stringify(currentGridViewCtx.sort ?? []),
+    sourceReloadNonce,
   ]);
+
+  useEventHandler(dadixEvents.sourceEvents.onRelinked, () => {
+    recordsCacheRef.current = {};
+    tableIdRef.current = undefined;
+    setSourceReloadNonce((value) => value + 1);
+  });
 
   // handle create new row
   useEventHandler(
@@ -502,6 +516,32 @@ export function GridViewRowsContextProvider({
     [currentTableRows, currentGridViewCtx.view?.fields]
   );
 
+  useEventHandler(
+    dadixEvents.tableEvents.onPatchField,
+    (evnt: Event) => {
+      const { tableId, fieldId, data } = (evnt as CustomEvent).detail || {};
+      const nextName = typeof data?.name === 'string' ? data.name.trim() : '';
+      if (!nextName || `${tableId}` !== `${tableIdRef.current}`) return;
+      const field = currentGridViewCtx.view?.fields?.find(
+        (item) => `${item.fieldId}` === `${fieldId}`
+      );
+      const previousName = String(field?.fieldName || field?.name || '').trim();
+      if (!previousName || previousName === nextName) return;
+      setCurrentTableRows((rows) => {
+        const next = rows.map((row) => renameRecordFieldKey(row, previousName, nextName));
+        for (const key of Object.keys(recordsCacheRef.current)) {
+          const entry = recordsCacheRef.current[key];
+          recordsCacheRef.current[key] = {
+            ...entry,
+            rows: entry.rows.map((row) => renameRecordFieldKey(row, previousName, nextName)),
+          };
+        }
+        return next;
+      });
+    },
+    [currentGridViewCtx.view?.fields]
+  );
+
   // handle deleting rows
   useEventHandler(
     dadixEvents.recordEvents.onDelete,
@@ -592,6 +632,8 @@ export function GridViewRowsContextProvider({
           limit: currentTableRowsLimitRef.current,
           offset: currentTableRowsOffsetRef.current,
           filter: currentTableFilterRef.current,
+          order: currentTableSortingRuleRef.current?.[0]?.direction,
+          sort: JSON.stringify(currentTableSortingRuleRef.current ?? []),
         })
         .then((_res) => {
           const res = _res as {

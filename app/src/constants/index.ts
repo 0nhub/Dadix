@@ -20,6 +20,7 @@ export const availableDadixFieldsDataTypes = {
   CODE: 'CODE',
   RELATION: 'RELATION',
   AI: 'AI',
+  FILE: 'FILE',
 };
 
 /** Special type for view-only buttons (not a table column). */
@@ -45,5 +46,6 @@ export const dadixFieldsDataTypes: {
   { id: 7, icon: 'LucideCurlyBraces', name: 'Code', value: 'CODE' },
   { id: 8, icon: 'LucideWorkflow', name: 'Connect', value: 'RELATION' },
   { id: 9, icon: 'LucideBot', name: 'AI', value: 'AI' },
-  { id: 10, icon: 'LucideMousePointerClick', name: 'Button', value: 'VIEW_BUTTON' },
+  { id: 10, icon: 'LucideImage', name: 'File', value: 'FILE' },
+  { id: 11, icon: 'LucideMousePointerClick', name: 'Button', value: 'VIEW_BUTTON' },
 ];

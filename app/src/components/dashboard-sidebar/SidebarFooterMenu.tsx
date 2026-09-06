@@ -5,9 +5,8 @@ import { useRouter } from 'next/navigation';
 import {
   LayoutGrid,
   FolderPlus,
-  Link as LinkIcon,
+  Link2,
   Search,
-  SearchX,
   LucideEllipsis,
   Table2,
   Eye,
@@ -42,7 +41,7 @@ export function SidebarFooterMenu() {
   const [newLinkOpen, setNewLinkOpen] = useState(false);
 
   return (
-    <SidebarFooter className='flex justify-start'>
+    <SidebarFooter className='mt-auto flex shrink-0 justify-start pb-1'>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button
@@ -66,17 +65,8 @@ export function SidebarFooterMenu() {
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem onClick={() => setSearchVisible(!searchVisible)}>
-            {searchVisible ? (
-              <>
-                <SearchX className='size-4' />
-                Hide search
-              </>
-            ) : (
-              <>
-                <Search className='size-4' />
-                Show search
-              </>
-            )}
+            <Search className='size-4' />
+            Search
           </DropdownMenuItem>
           <DropdownMenuItem
             onClick={() => setShowHiddenGroups(!showHiddenGroups)}
@@ -102,8 +92,11 @@ export function SidebarFooterMenu() {
             <FolderPlus className='size-4' />
             New group
           </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => setNewLinkOpen(true)}>
-            <LinkIcon className='size-4' />
+          <DropdownMenuItem
+            className='h-8 min-h-8 py-0'
+            onClick={() => setNewLinkOpen(true)}
+          >
+            <Link2 className='size-4 shrink-0' />
             New link
           </DropdownMenuItem>
         </DropdownMenuContent>

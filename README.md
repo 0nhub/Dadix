@@ -1,6 +1,9 @@
 # Dadix
 
-Airtable-ähnliche App: Web (Next.js + Express) und optionale Desktop-App (Tauri).
+Airtable-ähnliche App: Web (Next.js + Express) und local-first Desktop (Tauri 2).
+
+Zielarchitektur (verbindlich): [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).  
+PR-Checkliste: [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md).
 
 Aktuelle Quelle liegt in diesem Repo. Ältere Kopien unter iCloud (`Projects/Dadix`, `iMac übertrag/Dadix`, Sicherheitskopie) sind Archive — nicht mehr zum Entwickeln nutzen.
 
@@ -8,10 +11,22 @@ Aktuelle Quelle liegt in diesem Repo. Ältere Kopien unter iCloud (`Projects/Dad
 
 ```
 Dadix/
-├── app/              # Web: Next.js Frontend + Express API
-├── dadix-desktop/    # Desktop: Tauri + lokales .dadix (SQLite)
+├── crates/dadix-core/   # Rust-Core: .dadix-Lifecycle, unabhängig von Tauri
+├── app/                 # Web: Next.js Frontend + Express API
+├── dadix-desktop/       # Desktop: Tauri-Shell (ruft nur dadix-core)
 └── docs/
 ```
+
+Rust-Workspace (Core-Tests ohne GUI):
+
+```bash
+cargo test -p dadix-core
+cargo bench -p dadix-core --bench duckdb_query
+cargo bench -p dadix-core --bench file_sources
+cargo bench -p dadix-core --bench large_file
+```
+
+`dadix-core` owns both the `.dadix` SQLite control plane and the in-memory DuckDB query engine. The desktop UI only calls `dadix_*` commands.
 
 ## Web lokal starten
 
@@ -32,7 +47,7 @@ Ohne PostgreSQL läuft der Dev-Server weiter; Projekte und Tabellen bleiben dann
 
 ## Desktop
 
-Siehe `dadix-desktop/README.md`. Ein Projekt ist eine lokale `.dadix`-Datei (SQLite), kein Server nötig.
+Siehe [`dadix-desktop/README.md`](dadix-desktop/README.md). Ein Projekt ist eine lokale `.dadix`-Datei (SQLite), kein Server nötig. Doppelklick auf `*.dadix` soll die Desktop-App öffnen.
 
 ## Was nicht ins Repo gehört
 

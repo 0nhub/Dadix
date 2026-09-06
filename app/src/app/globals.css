@@ -167,7 +167,6 @@ body {
   *:focus,
   *:focus-visible {
     outline: none !important;
-    box-shadow: none !important;
   }
   button:focus,
   button:focus-visible,
@@ -189,6 +188,88 @@ body {
   body {
     @apply bg-background text-foreground;
   }
+}
+
+[data-sonner-toast].copy-toast-pill {
+  width: max-content !important;
+  min-width: max-content !important;
+  max-width: 90vw !important;
+  white-space: nowrap !important;
+}
+
+[data-sonner-toast].copy-toast-pill [data-content],
+[data-sonner-toast].copy-toast-pill [data-title] {
+  width: max-content !important;
+  white-space: nowrap !important;
+}
+
+.dadix-project-shell {
+  --dadix-titlebar-height: 44px;
+}
+
+.dadix-app-titlebar,
+.dadix-app-titlebar .dadix-titlebar-drag {
+  -webkit-app-region: drag;
+  app-region: drag;
+}
+
+.dadix-app-titlebar button,
+.dadix-app-titlebar [data-view-name] {
+  line-height: 1.25;
+}
+
+.dadix-app-titlebar button,
+.dadix-app-titlebar input,
+.dadix-app-titlebar a,
+.dadix-app-titlebar textarea,
+.dadix-app-titlebar [role='button'],
+.dadix-app-titlebar [data-no-drag] {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+
+html[data-dadix-os='macos'] .dadix-app-titlebar {
+  /* Measured: red starts at 16px, green ends at 75.5px. 16px after green → 92. */
+  padding-left: 92px;
+}
+
+.dadix-traffic-close {
+  display: none;
+  width: 1px;
+  align-self: stretch;
+  flex-shrink: 0;
+  background-color: var(--border);
+}
+
+html[data-dadix-os='macos'] .dadix-app-titlebar .dadix-traffic-close {
+  display: block;
+}
+
+html[data-dadix-os='windows'] .dadix-app-titlebar,
+html[data-dadix-os='linux'] .dadix-app-titlebar {
+  padding-right: 0;
+}
+
+/* Floating menus keep a stable elevation. Do not tie box-shadow to :focus —
+   otherwise the whole panel pops a shadow the moment an item is highlighted. */
+[data-slot='dropdown-menu-content'],
+[data-slot='dropdown-menu-sub-content'],
+[data-slot='select-content'],
+[data-slot='popover-content'] {
+  box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1) !important;
+}
+
+/* Icons follow the row text color (Delete hover, destructive items, etc.). */
+[data-slot='dropdown-menu-item']:is(:hover, :focus, [data-highlighted]) svg {
+  color: inherit !important;
+  stroke: currentColor !important;
+}
+
+html.dadix-col-resizing,
+html.dadix-col-resizing * {
+  cursor: ew-resize !important;
+  user-select: none !important;
+  overflow-anchor: none !important;
 }
 
 @layer utilities {

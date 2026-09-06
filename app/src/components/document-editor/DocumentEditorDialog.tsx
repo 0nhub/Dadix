@@ -6,6 +6,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { DocumentEditorScreen } from '@/components/document-editor/DocumentEditorModal';
 import { useEventHandler } from '@/hooks/useEventHandler';
 import type { Field } from '@/types';
+import { openDesktopAuxWindow } from '@/lib/desktopShell';
 
 const OPEN_DOCUMENT_EDITOR_EVENT = 'dadix-open-document-editor';
 
@@ -53,7 +54,7 @@ function DocumentEditorDialog() {
   return (
     <>
       {createPortal(
-        <div className='fixed top-0 left-0 w-full h-full bg-black/20 overflow-hidden z-20'>
+        <div className='fixed top-0 left-0 w-full h-full bg-black/20 overflow-hidden z-50'>
           <div
             role='dialog'
             aria-modal='true'
@@ -77,6 +78,15 @@ function DocumentEditorDialog() {
 
 function openDocumentEditorDialog(payload: OpenDocumentEditorParams) {
   if (!payload?.projectId || payload.tableId == null) return;
+  if (
+    openDesktopAuxWindow({
+      kind: 'documents',
+      title: 'Documents',
+      hash: `/dashboard/${payload.projectId}/documents-editor?tableId=${payload.tableId}`,
+    })
+  ) {
+    return;
+  }
   window.dispatchEvent(
     new CustomEvent(OPEN_DOCUMENT_EDITOR_EVENT, { detail: payload })
   );

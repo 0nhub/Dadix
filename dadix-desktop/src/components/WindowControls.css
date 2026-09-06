@@ -1,0 +1,101 @@
+.dadix-macos-lights {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 2147483647;
+  display: flex;
+  height: var(--dadix-titlebar-height, 44px);
+  width: 92px;
+  align-items: center;
+  padding-left: 16px;
+  pointer-events: none;
+}
+
+.dadix-macos-lights-cluster {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  pointer-events: auto;
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+
+.dadix-macos-light {
+  position: relative;
+  width: 12px;
+  height: 12px;
+  padding: 0;
+  border-radius: 50%;
+  border: 0.5px solid rgb(0 0 0 / 0.12);
+  appearance: none;
+  -webkit-appearance: none;
+  cursor: default;
+}
+
+.dadix-macos-light-close {
+  background: #ff5f57;
+}
+
+.dadix-macos-light-min {
+  background: #febc2e;
+}
+
+.dadix-macos-light-zoom {
+  background: #28c840;
+}
+
+.dadix-macos-lights-cluster[data-focused="false"] .dadix-macos-light {
+  background: #cecece;
+  border-color: rgb(0 0 0 / 0.08);
+}
+
+.dadix-macos-light::before,
+.dadix-macos-light::after {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  opacity: 0;
+  pointer-events: none;
+  content: "";
+}
+
+.dadix-macos-lights-cluster[data-hovered="true"] .dadix-macos-light::before,
+.dadix-macos-lights-cluster[data-hovered="true"] .dadix-macos-light::after {
+  opacity: 1;
+}
+
+.dadix-macos-light-close::before,
+.dadix-macos-light-close::after {
+  width: 7px;
+  height: 1px;
+  background: #4d0000;
+}
+
+.dadix-macos-light-close::before {
+  transform: rotate(45deg);
+}
+
+.dadix-macos-light-close::after {
+  transform: rotate(-45deg);
+}
+
+.dadix-macos-light-min::before {
+  width: 7px;
+  height: 1px;
+  background: #985700;
+}
+
+.dadix-macos-light-zoom::before,
+.dadix-macos-light-zoom::after {
+  background: #006500;
+}
+
+.dadix-macos-light-zoom::before {
+  width: 7px;
+  height: 1px;
+}
+
+.dadix-macos-light-zoom::after {
+  width: 1px;
+  height: 7px;
+}

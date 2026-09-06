@@ -1,0 +1,56 @@
+[package]
+name = "dadix-core"
+version.workspace = true
+edition.workspace = true
+description = "Dadix project core: .dadix control plane and DuckDB query engine"
+license = "MIT"
+
+[dependencies]
+chrono = { version = "0.4", features = ["serde"] }
+duckdb = { version = "1.2", features = ["bundled"] }
+fs4 = { version = "0.13", features = ["sync"] }
+futures-util = "0.3"
+keyring = { version = "3.6.3", default-features = false, features = [
+    "apple-native",
+    "windows-native",
+    "sync-secret-service",
+    "crypto-rust",
+] }
+mysql = "25"
+postgres = "0.19"
+rusqlite = { version = "0.32", features = ["bundled"] }
+rust_decimal = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+tiberius = { version = "0.12", default-features = false, features = [
+    "tds73",
+    "rustls",
+    "chrono",
+    "rust_decimal",
+] }
+tokio = { version = "1", features = ["rt", "net", "time", "io-util"] }
+tokio-util = { version = "0.7", features = ["compat"] }
+ureq = { version = "3.4", default-features = false, features = ["rustls"] }
+uuid = { version = "1", features = ["v4"] }
+
+[dev-dependencies]
+libc = "0.2"
+postgresql_embedded = { version = "0.21.0", features = ["blocking"] }
+tempfile = "3"
+
+[[bench]]
+name = "duckdb_query"
+harness = false
+
+[[bench]]
+name = "file_sources"
+harness = false
+
+[[bench]]
+name = "large_file"
+harness = false
+
+[[bin]]
+name = "dadix-credential"
+path = "src/bin/dadix_credential.rs"

@@ -161,7 +161,7 @@ export default function EditTablePage() {
               <DropdownMenuContent align='end'>
                 <DropdownMenuItem onClick={() => setApiKeysDialogOpen(true)}>
                   <LucideKey className='size-4' />
-                  AI API Keys
+                  AI Keys
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>

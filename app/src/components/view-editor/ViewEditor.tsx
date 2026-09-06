@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Sheet,
   SheetClose,
@@ -33,6 +33,7 @@ function ViewEditor() {
   const [viewId, setViewId] = useState<number | undefined>(undefined);
   const [viewType, setViewType] = useState<string | undefined>(undefined);
   const [view, setView] = useState<IDadixGridView | undefined>(undefined);
+  const ignoreDismissUntilRef = useRef(0);
 
   useEffect(() => {
     window.addEventListener(
@@ -48,6 +49,7 @@ function ViewEditor() {
     function handleOpenViewEditorEvent(evnt: Event) {
       const { viewId, view, viewType } = (evnt as CustomEvent).detail || {};
       if (!viewId || !view || !viewType) return;
+      ignoreDismissUntilRef.current = Date.now() + 400;
       setViewType(viewType);
       setView(view);
       setViewId(viewId);
@@ -59,17 +61,32 @@ function ViewEditor() {
     <Sheet
       open={isOpen}
       onOpenChange={(open) => {
-        if (!open) {
-          setIsOpen(open);
+        if (open) {
+          setIsOpen(true);
+          return;
         }
+        if (Date.now() < ignoreDismissUntilRef.current) return;
+        setIsOpen(false);
       }}
       modal={false}
     >
-      <SheetContent className='sm:max-w-[520px] z-9999'>
+      <SheetContent
+        className='sm:max-w-[520px] z-9999'
+        disableOutsideClose
+        onCloseAutoFocus={(event) => event.preventDefault()}
+      >
         <SheetHeader className='flex-row flex-nowrap items-center justify-between gap-2'>
           <SheetTitle hidden>View editor</SheetTitle>
           <SheetClose asChild>
-            <Button size='icon' variant='outline' className='shrink-0'>
+            <Button
+              size='icon'
+              variant='outline'
+              className='shrink-0'
+              onClick={() => {
+                ignoreDismissUntilRef.current = 0;
+                setIsOpen(false);
+              }}
+            >
               <LucideX />
             </Button>
           </SheetClose>

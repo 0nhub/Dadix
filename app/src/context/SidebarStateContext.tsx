@@ -26,7 +26,6 @@ import {
   setShowHiddenGroups as persistShowHiddenGroups,
   ensureDefaultGroup,
   DEFAULT_GROUP_ID,
-  DEFAULT_GROUP_NAME,
 } from '@/lib/sidebarState';
 
 interface SidebarStateContextValue {
@@ -227,16 +226,8 @@ export function SidebarStateProvider({
   }, []);
 
   const removeGroup = useCallback((groupId: string) => {
-    setGroupsState((prev) => {
-      const filtered = prev.filter((g) => g.id !== groupId);
-      if (groupId === DEFAULT_GROUP_ID) {
-        return [
-          ...filtered,
-          { id: DEFAULT_GROUP_ID, name: DEFAULT_GROUP_NAME, order: filtered.length },
-        ];
-      }
-      return filtered;
-    });
+    if (groupId === DEFAULT_GROUP_ID) return;
+    setGroupsState((prev) => prev.filter((g) => g.id !== groupId));
     setTableToGroupState((prev) => {
       const next = { ...prev };
       Object.keys(next).forEach((tableId) => {
@@ -251,27 +242,26 @@ export function SidebarStateProvider({
       });
       return next;
     });
+    setGroupItemOrderState((prev) => {
+      const next = { ...prev };
+      const moving = next[groupId] ?? [];
+      delete next[groupId];
+      const dest = next[DEFAULT_GROUP_ID] ?? [];
+      const seen = new Set(dest);
+      next[DEFAULT_GROUP_ID] = [
+        ...dest,
+        ...moving.filter((id) => !seen.has(id)),
+      ];
+      return next;
+    });
   }, []);
 
   const setGroupHidden = useCallback((groupId: string, hidden: boolean) => {
     setGroupsState((prev) =>
       prev.map((g) => (g.id === groupId ? { ...g, hidden } : g))
     );
-    if (hidden && groupId !== DEFAULT_GROUP_ID) {
-      setTableToGroupState((prev) => {
-        const next = { ...prev };
-        Object.keys(next).forEach((tableId) => {
-          if (next[tableId] === groupId) next[tableId] = DEFAULT_GROUP_ID;
-        });
-        return next;
-      });
-      setLinkToGroupState((prev) => {
-        const next = { ...prev };
-        Object.keys(next).forEach((linkId) => {
-          if (next[linkId] === groupId) next[linkId] = DEFAULT_GROUP_ID;
-        });
-        return next;
-      });
+    if (hidden) {
+      setShowHiddenGroupsState(false);
     }
   }, []);
 

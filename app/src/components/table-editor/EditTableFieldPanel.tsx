@@ -78,6 +78,7 @@ function EditTableFieldPanel() {
   const [choiceMode, setChoiceMode] = useState<ChoiceMode>('single');
 
   const fieldNameRef = useRef<string>(undefined);
+  const nameDirtyRef = useRef(false);
   const placeholderRef = useRef<string>('');
   const defaultValueRef = useRef<string>('');
   const closeTimeout = useRef<NodeJS.Timeout>(undefined);
@@ -118,12 +119,13 @@ function EditTableFieldPanel() {
       (f) => `${f.id}` === `${fieldId}`
     );
     if (!field) return;
+    if (nameDirtyRef.current) return;
     if (fieldNameRef.current !== field.name) {
       fieldNameRef.current = field.name;
       setFieldName(field.name);
     }
     const ph = (field.type === 'AI' || field.type === 'CODE') ? '' : (field.placeholder ?? '');
-    const dv = (field.type === 'AI' || field.type === 'CODE') ? '' : (field.defaultValue ?? '');
+    const dv = (field.type === 'AI' || field.type === 'CODE' || field.type === 'FILE') ? '' : (field.defaultValue ?? '');
     placeholderRef.current = ph;
     defaultValueRef.current = dv;
     setPlaceholder(ph);
@@ -159,6 +161,9 @@ function EditTableFieldPanel() {
       if (!field) return;
       setFieldId(fieldId);
       setAllowNavigation(allowNavigation);
+      nameDirtyRef.current = false;
+      fieldNameRef.current = field.name;
+      setFieldName(field.name);
       justOpenedRef.current = true;
       window.dispatchEvent(
         new CustomEvent(FIELD_PANEL_LAYOUT_OPENED, {
@@ -503,13 +508,15 @@ function EditTableFieldPanel() {
 
   const updateFieldName = () => {
     if (!editedField) return;
+    const nextName = String(fieldNameRef.current ?? '').trim();
+    if (!nextName) return;
     clearTimeout(updateFieldNameTimeout.current);
     updateFieldNameTimeout.current = setTimeout(() => {
       tableService
         .patchTableField({
           tableId: currentTableCtx?.id as string,
           id: editedField.id,
-          field: { name: fieldNameRef.current },
+          field: { name: nextName },
           silent: true,
         })
         .then((res) => {
@@ -542,7 +549,7 @@ function EditTableFieldPanel() {
     const data: { placeholder: string; defaultValue?: string } = {
       placeholder: updates.placeholder !== undefined ? updates.placeholder : placeholderRef.current,
     };
-    if (editedField.type !== 'AI') {
+    if (editedField.type !== 'AI' && editedField.type !== 'FILE') {
       data.defaultValue = updates.defaultValue !== undefined ? updates.defaultValue : defaultValueRef.current;
     }
     if (typeof window !== 'undefined' && process.env.NODE_ENV === 'development' && isDevDemoTable(tableId)) {
@@ -596,7 +603,7 @@ function EditTableFieldPanel() {
     >
       {editedField && (
         <SheetContent
-          className='!w-[420px] !max-w-[420px]'
+          className='!w-[420px] !max-w-[420px] z-[10050]'
           style={{ width: FIELD_PANEL_DEFAULT_WIDTH, maxWidth: FIELD_PANEL_DEFAULT_WIDTH }}
         >
           <SheetHeader className='gap-1'>
@@ -636,6 +643,7 @@ function EditTableFieldPanel() {
                   value={fieldName}
                   onChange={(e) => {
                     const newFieldName = e.target.value;
+                    nameDirtyRef.current = true;
                     fieldNameRef.current = newFieldName;
                     setFieldName(newFieldName);
                     updateFieldName();
@@ -724,6 +732,11 @@ function EditTableFieldPanel() {
                   tableId={`${currentTableCtx?.id}`}
                 />
               )}
+              {editedField.type === 'FILE' && (
+                <p className='text-muted-foreground text-xs'>
+                  Attach an image (PNG, JPEG, GIF, or WebP). Maximum size is 8 MB.
+                </p>
+              )}
               {editedField.type === 'CHOICE' && (
                 <EditTableChoiceFieldOptions choiceField={editedField} />
               )}
@@ -745,7 +758,7 @@ function EditTableFieldPanel() {
               </div>
               )}
 
-              {editedField.type !== 'AI' && editedField.type !== 'CODE' && (
+              {editedField.type !== 'AI' && editedField.type !== 'CODE' && editedField.type !== 'FILE' && (
               <div className='flex flex-col gap-3'>
                 <Label>Default value</Label>
                 {editedField.type === 'CHOICE' && (

@@ -51,17 +51,23 @@ function UpdateTableDialog() {
       if (isOpen) return;
 
       const { id, projectId } = (evnt as CustomEvent).detail || {};
-      if (!id || !projectId || `${projectId}` !== `${currentProjectCtx.id}`)
+      if (!id) return;
+      if (
+        projectId &&
+        currentProjectCtx.id &&
+        `${projectId}` !== `${currentProjectCtx.id}`
+      ) {
         return;
+      }
 
       const editedTable = currentProjectCtx.tables.find(
         (table) => `${table.id}` === `${id}`
       );
-      if (!editedTable) return;
-
-      editedTableRef.current = { ...editedTable };
-      setTableName(editedTable.name);
-      setSelectedIcon(editedTable.icon);
+      editedTableRef.current = editedTable
+        ? { ...editedTable }
+        : ({ id, name: '', icon: 'Table' } as Table);
+      setTableName(editedTable?.name ?? '');
+      setSelectedIcon(editedTable?.icon || 'Table');
       handleOpenChange(true);
     }
   }, [isOpen, currentProjectCtx.id, currentProjectCtx.tables]);

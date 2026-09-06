@@ -197,7 +197,7 @@ export function TableRowsContextProvider({
     async (evnt: Event) => {
       try {
         const { tableId, createdRecord } = (evnt as CustomEvent).detail || {};
-        if (!createdRecord || tableId !== tableIdRef.current) return;
+        if (!createdRecord || `${tableId}` !== `${tableIdRef.current}`) return;
         // check if full table records are loaded
         if (tableRowsOffsetRef.current < tableRowsTotalRef.current) return;
         // check if created record meet current filter

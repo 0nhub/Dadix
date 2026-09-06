@@ -178,7 +178,10 @@ function UpdateViewDialog() {
                         size='icon'
                         aria-pressed={selectedIcon === iconName}
                         title={iconName}
-                        onClick={() => setSelectedIcon(iconName)}
+                        onClick={() => {
+                          selectedIconRef.current = iconName;
+                          setSelectedIcon(iconName);
+                        }}
                         className={`shadow-none ${selectedIcon === iconName ? 'border' : 'border-none'}`}
                       >
                         <DadixViewIcon name={iconName} className='size-6' />

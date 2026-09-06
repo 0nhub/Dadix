@@ -94,6 +94,9 @@ const filterOperationsPerFieldDataType: Record<
     gte: 'after or equal',
     ...communFilterOperations,
   },
+  FILE: {
+    ...communFilterOperations,
+  },
 };
 
 const OPEN_FILTER_DIALOG_EVENT = 'dadix--open-filter-dialog-event';
@@ -138,6 +141,26 @@ function ViewFilterDialog() {
     setFilters([{ ...emptyFilter }]);
   }, [filters, isOpen, tableFields]);
 
+  function getCompleteFilters(list: IFilter[]) {
+    return list.filter((filter) => {
+      if (!filter.fieldId || !filter.operation || !filter.relation) return false;
+      const needsValue = !['isnull', 'notnull'].includes(filter.operation);
+      if (needsValue && (filter.value == null || `${filter.value}` === '')) {
+        return false;
+      }
+      return true;
+    });
+  }
+
+  function persistFilters(list: IFilter[]) {
+    onUpdateFiltersCallbackRef.current?.(getCompleteFilters(list));
+  }
+
+  useEffect(() => {
+    if (!isOpen) return;
+    persistFilters(filters);
+  }, [filters, isOpen]);
+
   function updateFilter({
     index,
     data,
@@ -176,26 +199,6 @@ function ViewFilterDialog() {
         ...newFilter,
       },
     ]);
-  }
-
-  function saveFiltersChanges() {
-    const newFilters = filters.filter(
-      (filter) =>
-        !(
-          !filter.value ||
-          !filter.fieldId ||
-          !filter.operation ||
-          !filter.relation
-        )
-    );
-    setFilters([...newFilters]);
-    if (onUpdateFiltersCallbackRef.current) {
-      onUpdateFiltersCallbackRef.current([...newFilters]);
-    }
-    if (newFilters.length === 0) {
-      addNewFilter('where');
-    }
-    setIsOpen(false);
   }
 
   function clearFilters() {
@@ -338,9 +341,9 @@ function ViewFilterDialog() {
             <LucidePlus />
             Rule
           </Button>
-          <Button onClick={saveFiltersChanges} variant='default'>
-            Done
-          </Button>
+          <DialogClose asChild>
+            <Button variant='default'>Done</Button>
+          </DialogClose>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -458,9 +461,10 @@ function Filter({
         <SelectTrigger
           className='bg-background grow-0 shrink-0 w-[22%]'
           title={
-            filterOperationsPerFieldDataType[selectedField?.type || ''][
-              filter.operation
-            ]
+            (
+              filterOperationsPerFieldDataType[selectedField?.type || ''] ??
+              communFilterOperations
+            )[filter.operation]
           }
         >
           <SelectValue />
@@ -468,13 +472,15 @@ function Filter({
         <SelectContent>
           {selectedField &&
             Object.keys(
-              filterOperationsPerFieldDataType[selectedField.type]
+              filterOperationsPerFieldDataType[selectedField.type] ??
+                communFilterOperations
             ).map((operation) => (
               <SelectItem value={`${operation}`} key={operation}>
                 {
-                  filterOperationsPerFieldDataType[selectedField.type][
-                    operation
-                  ]
+                  (
+                    filterOperationsPerFieldDataType[selectedField.type] ??
+                    communFilterOperations
+                  )[operation]
                 }
               </SelectItem>
             ))}

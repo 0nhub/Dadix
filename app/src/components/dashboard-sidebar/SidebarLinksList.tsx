@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
 import {
   DndContext,
   type DragEndEvent,
@@ -44,6 +43,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { useSidebarState } from '@/context/SidebarStateContext';
+import { openExternalUrl } from '@/lib/desktopShell';
 import {
   TableIcon,
   availableTableIcons,
@@ -81,17 +81,19 @@ function SortableLinkItem({
       {...attributes}
       {...listeners}
     >
-      <SidebarMenuItem className='flex items-center justify-between gap-1 rounded-md p-1.5 hover:bg-secondary'>
+      <SidebarMenuItem className='flex h-8 min-h-8 items-center justify-between gap-1 rounded-md py-0 px-1 hover:bg-secondary'>
         <button
           type='button'
-          className='flex min-w-0 flex-1 items-center gap-2 text-left text-sm'
+          className='flex h-8 min-w-0 flex-1 items-center gap-2 text-left text-sm leading-5'
           onClick={onOpen}
         >
           <TableIcon
             name={link.icon ?? 'Globe'}
-            className='size-4 shrink-0 text-muted-foreground'
+            width={18}
+            height={18}
+            className='size-[18px] shrink-0'
           />
-          <span className='truncate'>{link.title}</span>
+          <span className='truncate text-sm leading-5'>{link.title}</span>
         </button>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -121,7 +123,6 @@ function SortableLinkItem({
 }
 
 export function SidebarLinksList() {
-  const router = useRouter();
   const { links, setLinks, removeLink, updateLink } = useSidebarState();
   const [editingLink, setEditingLink] = useState<SidebarLink | null>(null);
 
@@ -136,16 +137,7 @@ export function SidebarLinksList() {
   if (links.length === 0) return null;
 
   const openLink = (url: string) => {
-    try {
-      const parsed = new URL(url, window.location.origin);
-      if (parsed.origin === window.location.origin) {
-        router.push(parsed.pathname + parsed.search + parsed.hash);
-        return;
-      }
-    } catch {
-      /* fall through */
-    }
-    window.open(url, '_blank', 'noopener,noreferrer');
+    openExternalUrl(url);
   };
 
   function handleLinkDragEnd(event: DragEndEvent) {

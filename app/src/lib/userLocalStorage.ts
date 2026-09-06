@@ -7,6 +7,7 @@ export class UserLocalStorage {
   static #projectIdKey = 'dadix-last-project-id';
   static #tableIdKey = 'dadix-last-table-id';
   static #viewIdKey = 'dadix-last-view-id';
+  static #viewIdByTableKey = 'dadix-last-view-id-by-table';
   static #recordEditorWidthKey = 'dadix-record-editor-width';
   static #tableStyleThemeKey = 'dadix-table-style-theme';
   static #dashboardViewModeKey = 'dadix-dashboard-view-mode';
@@ -25,6 +26,35 @@ export class UserLocalStorage {
   static getViewId() {
     return localStorage?.getItem(this.#viewIdKey) || undefined;
   }
+
+  static getViewIdForTable(tableId: string | number | undefined) {
+    const id = String(tableId ?? '');
+    if (!id) return undefined;
+    try {
+      const raw = localStorage?.getItem(this.#viewIdByTableKey);
+      if (!raw) return undefined;
+      const parsed = JSON.parse(raw) as Record<string, string>;
+      return parsed[id] || undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  static setViewIdForTable(tableId: string | number | undefined, viewId: string) {
+    const id = String(tableId ?? '');
+    if (!id) return;
+    try {
+      const raw = localStorage?.getItem(this.#viewIdByTableKey);
+      const parsed =
+        raw && raw.startsWith('{')
+          ? (JSON.parse(raw) as Record<string, string>)
+          : {};
+      parsed[id] = viewId;
+      localStorage?.setItem(this.#viewIdByTableKey, JSON.stringify(parsed));
+    } catch {
+      /* ignore */
+    }
+  }
   static getRecordEditorWidth() {
     return localStorage?.getItem(this.#recordEditorWidthKey) || undefined;
   }
@@ -40,7 +70,10 @@ export class UserLocalStorage {
     this.setViewId('');
     return localStorage?.setItem(this.#tableIdKey, newValue);
   }
-  static setViewId(newValue: string) {
+  static setViewId(newValue: string, tableId?: string | number) {
+    if (tableId != null && newValue) {
+      this.setViewIdForTable(tableId, newValue);
+    }
     return localStorage?.setItem(this.#viewIdKey, newValue);
   }
   static setRecordEditorWidth(newValue: number | undefined) {

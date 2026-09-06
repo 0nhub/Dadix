@@ -208,11 +208,13 @@ export function setShowHiddenGroups(visible: boolean): void {
 
 export function ensureDefaultGroup(projectId: string): SidebarGroup[] {
   const groups = getSidebarGroups(projectId);
-  const hasDefault = groups.some((g) => g.id === DEFAULT_GROUP_ID);
-  if (hasDefault || groups.length > 0) return groups;
-  const defaultGroups: SidebarGroup[] = [
-    { id: DEFAULT_GROUP_ID, name: DEFAULT_GROUP_NAME, order: 0 },
-  ];
-  setSidebarGroups(projectId, defaultGroups);
-  return defaultGroups;
+  if (groups.some((g) => g.id === DEFAULT_GROUP_ID)) return groups;
+  const defaultGroup: SidebarGroup = {
+    id: DEFAULT_GROUP_ID,
+    name: DEFAULT_GROUP_NAME,
+    order: groups.length === 0 ? 0 : Math.max(...groups.map((g) => g.order)) + 1,
+  };
+  const next = [...groups, defaultGroup];
+  setSidebarGroups(projectId, next);
+  return next;
 }

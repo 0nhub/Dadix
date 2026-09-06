@@ -328,7 +328,7 @@ function Sidebar({
         data-slot='sidebar-container'
         data-resizing={isResizing ? 'true' : undefined}
         className={cn(
-          'z-20 w-(--sidebar-width) fixed inset-y-0 hidden h-svh transition-[left,right,width] duration-200 ease-linear md:flex',
+          'bg-sidebar z-40 w-(--sidebar-width) fixed top-[var(--dadix-titlebar-height,0px)] bottom-0 hidden h-auto overflow-visible transition-[left,right,width,top] duration-200 ease-linear md:flex',
           isResizing && '!transition-none',
           side === 'left'
             ? 'left-0 group-data-[collapsible=offcanvas]:left-[calc(var(--sidebar-width)*-1)] group-data-[closed=true]:left-[calc(var(--sidebar-width)*-1)]'
@@ -344,47 +344,204 @@ function Sidebar({
         <div
           data-sidebar='sidebar'
           data-slot='sidebar-inner'
-          className='bg-sidebar group-data-[variant=floating]:border-sidebar-border flex size-full flex-col group-data-[variant=floating]:rounded-lg group-data-[variant=floating]:border group-data-[variant=floating]:shadow-sm group-data-[collapsible=icon]:items-center'
+          className='bg-sidebar group-data-[variant=floating]:border-sidebar-border flex h-full min-h-0 w-full flex-col overflow-hidden group-data-[variant=floating]:rounded-lg group-data-[variant=floating]:border group-data-[variant=floating]:shadow-sm group-data-[collapsible=icon]:items-center'
         >
           {children}
         </div>
-        {resizable && <SidebarResizeHandle side={side} />}
+        {resizable && !isFullyClosed && <SidebarResizeHandle side={side} />}
       </div>
     </div>
   );
 }
 
+const SIDEBAR_RESIZE_THRESHOLD = 3;
+
+function measureLabelTextWidth(el: HTMLElement, text: string): number {
+  const style = getComputedStyle(el);
+  const probe = document.createElement('span');
+  probe.textContent = text;
+  probe.style.cssText = [
+    'position:absolute',
+    'left:-99999px',
+    'top:0',
+    'visibility:hidden',
+    'white-space:nowrap',
+    `font:${style.font}`,
+    `letter-spacing:${style.letterSpacing}`,
+    `text-transform:${style.textTransform}`,
+  ].join(';');
+  document.body.appendChild(probe);
+  const width = probe.getBoundingClientRect().width;
+  probe.remove();
+  return width;
+}
+
+function isVisibleBox(el: HTMLElement): boolean {
+  const style = getComputedStyle(el);
+  return (
+    style.display !== 'none' &&
+    style.visibility !== 'hidden' &&
+    parseFloat(style.opacity) > 0.05 &&
+    style.position !== 'absolute' &&
+    el.getClientRects().length > 0
+  );
+}
+
+function sameRowTrailingWidth(el: HTMLElement): number {
+  const parent = el.parentElement;
+  if (!parent) return 0;
+  const gap = parseFloat(getComputedStyle(parent).columnGap || getComputedStyle(parent).gap) || 0;
+  let extra = 0;
+  let sibling = el.nextElementSibling as HTMLElement | null;
+  while (sibling) {
+    if (isVisibleBox(sibling)) extra += gap + sibling.getBoundingClientRect().width;
+    sibling = sibling.nextElementSibling as HTMLElement | null;
+  }
+  return extra;
+}
+
+function measureSidebarAutoWidth(sidebarEl: HTMLElement): number {
+  const PAD = 10;
+  const sidebarLeft = sidebarEl.getBoundingClientRect().left;
+  let contentRight = 0;
+
+  const consider = (el: HTMLElement, text: string) => {
+    const label = text.replace(/\s+/g, ' ').trim();
+    if (!label || !isVisibleBox(el)) return;
+    contentRight = Math.max(
+      contentRight,
+      el.getBoundingClientRect().left - sidebarLeft + measureLabelTextWidth(el, label) + sameRowTrailingWidth(el)
+    );
+  };
+
+  sidebarEl.querySelectorAll<HTMLElement>('[data-table-name]').forEach((el) => {
+    consider(el, el.getAttribute('data-table-name') ?? '');
+  });
+  sidebarEl.querySelectorAll<HTMLElement>('[data-sidebar-fit-label]').forEach((el) => {
+    consider(el, el.getAttribute('data-sidebar-fit-label') ?? '');
+  });
+
+  const projectLabel = sidebarEl.querySelector<HTMLElement>(
+    '[data-slot="sidebar-header"] [data-sidebar-fit-label]'
+  );
+  const projectRow = projectLabel?.parentElement;
+  const chevron = projectRow?.nextElementSibling as HTMLElement | null;
+  if (projectLabel && isVisibleBox(projectLabel) && chevron && isVisibleBox(chevron)) {
+    const title = projectLabel.getAttribute('data-sidebar-fit-label') ?? '';
+    const gap = parseFloat(getComputedStyle(projectRow!).columnGap || getComputedStyle(projectRow!).gap) || 0;
+    contentRight = Math.max(
+      contentRight,
+      projectLabel.getBoundingClientRect().left -
+        sidebarLeft +
+        measureLabelTextWidth(projectLabel, title) +
+        gap +
+        chevron.getBoundingClientRect().width
+    );
+  }
+
+  return Math.max(120, Math.min(SIDEBAR_WIDTH_PX_MAX, Math.ceil(contentRight + PAD)));
+}
+
 function SidebarResizeHandle({ side }: { side: 'left' | 'right' }) {
-  const { sidebarWidthPx, setSidebarWidthPx, setResizing } = useSidebar();
-  const startXRef = React.useRef(0);
-  const startWidthRef = React.useRef(0);
+  const { setSidebarWidthPx, setResizing } = useSidebar();
+  const [isDragging, setIsDragging] = React.useState(false);
+  const dragRef = React.useRef<{
+    pointerId: number;
+    grabOffset: number;
+    lastWidth: number;
+    didMove: boolean;
+  } | null>(null);
 
-  const onMouseDown = React.useCallback(
-    (e: React.MouseEvent) => {
-      e.preventDefault();
-      startXRef.current = e.clientX;
-      startWidthRef.current = sidebarWidthPx ?? 256;
+  const clampWidth = React.useCallback((width: number) => {
+    return Math.max(SIDEBAR_WIDTH_PX_MIN, Math.min(SIDEBAR_WIDTH_PX_MAX, Math.round(width)));
+  }, []);
 
-      const onMouseMove = (moveEvent: MouseEvent) => {
-        setResizing?.(true);
-        const delta = moveEvent.clientX - startXRef.current;
-        const next = side === 'left' ? startWidthRef.current + delta : startWidthRef.current - delta;
-        setSidebarWidthPx?.(Math.max(SIDEBAR_WIDTH_PX_MIN, Math.min(SIDEBAR_WIDTH_PX_MAX, next)));
-      };
-      const onMouseUp = () => {
-        setResizing?.(false);
-        document.removeEventListener('mousemove', onMouseMove);
-        document.removeEventListener('mouseup', onMouseUp);
-        document.body.style.cursor = '';
-        document.body.style.userSelect = '';
-      };
-
-      document.body.style.cursor = 'col-resize';
-      document.body.style.userSelect = 'none';
-      document.addEventListener('mousemove', onMouseMove);
-      document.addEventListener('mouseup', onMouseUp);
+  const widthFromPointer = React.useCallback(
+    (clientX: number, sidebarEl: HTMLElement, grabOffset: number) => {
+      const rect = sidebarEl.getBoundingClientRect();
+      const next =
+        side === 'left'
+          ? clientX + grabOffset - rect.left
+          : rect.right - (clientX - grabOffset);
+      return clampWidth(next);
     },
-    [side, sidebarWidthPx, setSidebarWidthPx, setResizing]
+    [side, clampWidth]
+  );
+
+  const onPointerDown = React.useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      if (event.button !== 0) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const handle = event.currentTarget;
+      const sidebarEl = handle.parentElement;
+      if (!sidebarEl) return;
+      const rect = sidebarEl.getBoundingClientRect();
+      const grabOffset = side === 'left' ? rect.right - event.clientX : event.clientX - rect.left;
+      const pointerId = event.pointerId;
+      dragRef.current = {
+        pointerId,
+        grabOffset,
+        lastWidth: clampWidth(rect.width),
+        didMove: false,
+      };
+
+      const onMove = (moveEvent: PointerEvent) => {
+        const drag = dragRef.current;
+        if (!drag || moveEvent.pointerId !== pointerId) return;
+        moveEvent.preventDefault();
+        if (!drag.didMove) {
+          if (Math.abs(moveEvent.clientX - event.clientX) < SIDEBAR_RESIZE_THRESHOLD) return;
+          drag.didMove = true;
+          setIsDragging(true);
+          setResizing?.(true);
+          document.documentElement.classList.add('dadix-col-resizing');
+          document.body.style.userSelect = 'none';
+          try {
+            handle.setPointerCapture(pointerId);
+          } catch {
+            /* optional */
+          }
+        }
+        const next = widthFromPointer(moveEvent.clientX, sidebarEl, drag.grabOffset);
+        if (next === drag.lastWidth) return;
+        drag.lastWidth = next;
+        setSidebarWidthPx?.(next);
+      };
+      const onUp = (upEvent: PointerEvent) => {
+        if (upEvent.pointerId !== pointerId) return;
+        const drag = dragRef.current;
+        dragRef.current = null;
+        window.removeEventListener('pointermove', onMove, true);
+        window.removeEventListener('pointerup', onUp, true);
+        window.removeEventListener('pointercancel', onUp, true);
+        document.documentElement.classList.remove('dadix-col-resizing');
+        document.body.style.userSelect = '';
+        setIsDragging(false);
+        setResizing?.(false);
+        try {
+          if (handle.hasPointerCapture(pointerId)) handle.releasePointerCapture(pointerId);
+        } catch {
+          /* already released */
+        }
+        if (drag?.didMove) setSidebarWidthPx?.(drag.lastWidth);
+      };
+      window.addEventListener('pointermove', onMove, true);
+      window.addEventListener('pointerup', onUp, true);
+      window.addEventListener('pointercancel', onUp, true);
+    },
+    [side, clampWidth, setSidebarWidthPx, setResizing, widthFromPointer]
+  );
+
+  const onDoubleClick = React.useCallback(
+    (event: React.MouseEvent<HTMLDivElement>) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const sidebarEl = event.currentTarget.parentElement;
+      if (!sidebarEl) return;
+      setSidebarWidthPx?.(measureSidebarAutoWidth(sidebarEl));
+    },
+    [setSidebarWidthPx]
   );
 
   return (
@@ -392,10 +549,25 @@ function SidebarResizeHandle({ side }: { side: 'left' | 'right' }) {
       role='separator'
       aria-orientation='vertical'
       aria-label='Resize sidebar'
-      onMouseDown={onMouseDown}
-      className='absolute inset-y-0 w-1.5 cursor-col-resize shrink-0 group-data-[side=left]:-right-0.5 group-data-[side=left]:right-0 group-data-[side=right]:left-0 z-30 hover:bg-sidebar-border/80 active:bg-sidebar-border transition-colors'
+      onPointerDown={onPointerDown}
+      onMouseDown={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+      }}
+      onClick={(event) => event.stopPropagation()}
+      onDoubleClick={onDoubleClick}
+      className='group/sidebar-resize absolute inset-y-0 z-40 w-2.5 cursor-ew-resize touch-none'
       style={side === 'left' ? { right: 0 } : { left: 0 }}
-    />
+    >
+      <span
+        aria-hidden
+        className={cn(
+          'pointer-events-none absolute inset-y-0 w-[2px] bg-transparent group-hover/sidebar-resize:bg-[#00B4FF]',
+          isDragging && 'bg-[#00B4FF]',
+          side === 'left' ? 'right-0' : 'left-0'
+        )}
+      />
+    </div>
   );
 }
 
@@ -413,7 +585,7 @@ function SidebarTrigger({
       variant='ghost'
       size='icon'
       className={cn(
-        'bg-background shadow-xs hover:bg-accent hover:text-accent-foreground dark:bg-input/30 dark:border-input dark:hover:bg-input/50 border',
+        'hover:bg-accent hover:text-accent-foreground',
         className
       )}
       onClick={(event) => {
@@ -458,8 +630,8 @@ function SidebarInset({ className, ...props }: React.ComponentProps<'main'>) {
     <main
       data-slot='sidebar-inset'
       className={cn(
-        'bg-background relative flex w-full flex-1 flex-col',
-        ' md:peer-data-[variant=inset]:ml-0 md:peer-data-[variant=inset]:rounded-xl',
+        'bg-background relative flex w-full flex-1 flex-col rounded-none',
+        'md:peer-data-[variant=inset]:ml-0 md:peer-data-[variant=inset]:rounded-none',
         className
       )}
       {...props}

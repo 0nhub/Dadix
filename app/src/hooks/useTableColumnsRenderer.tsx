@@ -1,4 +1,5 @@
 import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
+import { useEventHandler } from '@/hooks/useEventHandler';
 
 import { Switch } from '@/components/ui/switch';
 import { GridViewSearch } from '@/components/views-switch/views/grid-view/GridViewSearch';
@@ -37,15 +38,15 @@ import {
   LucideAlignLeft,
   LucideAlignRight,
   LucideArrowRight,
-  LucideArrowUp,
   LucideCheck,
-  LucideCircleOff,
   LucideCopy,
   LucideEyeOff,
   LucidePencilLine,
   LucidePin,
   LucidePointer,
   LucideRectangleEllipsis,
+  LucideArrowDownUp,
+  LucidePanelRightOpen,
   LucideSortDesc,
   LucideSquareArrowOutUpRight,
 } from 'lucide-react';
@@ -62,11 +63,143 @@ import {
 import { Calendar } from '@/components/ui/calendar';
 import { Input } from '@/components/ui/input';
 import { TextFieldInput } from '@/components/table-cell-viewer';
+import { FileFieldControl } from '@/components/file-field/FileFieldControl';
+import { fileFieldDisplayName } from '@/lib/fileField';
 import { Button } from '@/components/ui/button';
 import { useLanguage } from '@/context/LanguageContext';
+import { openExternalUrl } from '@/lib/desktopShell';
 
 function isCellEditable(action: FieldActions | null | undefined) {
-  return action == null || action === 'edit';
+  return action === 'edit';
+}
+
+function cellEditEventMatches(
+  evnt: Event,
+  recordId: number,
+  fieldId: number,
+  fieldName: string
+) {
+  const detail = (evnt as CustomEvent<{
+    recordId?: string | number;
+    fieldId?: string | number;
+    fieldName?: string;
+  }>).detail;
+  if (!detail || String(detail.recordId) !== String(recordId)) return false;
+  if (detail.fieldId != null && Number(detail.fieldId) === Number(fieldId)) return true;
+  return detail.fieldName != null && String(detail.fieldName) === fieldName;
+}
+
+function OpenOnCellEditRequest({
+  recordId,
+  fieldId,
+  fieldName,
+  children,
+}: {
+  recordId: number;
+  fieldId: number;
+  fieldName: string;
+  children: ReactNode;
+}) {
+  const ref = useRef<HTMLSpanElement>(null);
+  useEventHandler(dadixEvents.recordEvents.onEditCell, (evnt) => {
+    if (!cellEditEventMatches(evnt, recordId, fieldId, fieldName)) return;
+    const root = ref.current;
+    const target =
+      root?.querySelector<HTMLElement>(
+        'button, [role="combobox"], input, [data-slot="switch"]'
+      ) ?? root;
+    target?.click();
+  });
+  return (
+    <span ref={ref} className='contents'>
+      {children}
+    </span>
+  );
+}
+
+function ColumnHeaderDropdown({
+  label,
+  onRightClickEdit,
+  children,
+}: {
+  label: string;
+  onRightClickEdit?: () => void;
+  children: ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  const pointerStartRef = useRef<{ x: number; y: number } | null>(null);
+  const didDragRef = useRef(false);
+  const rightClickRef = useRef(false);
+
+  useEffect(() => {
+    const close = () => setOpen(false);
+    window.addEventListener('dadix-column-drag-start', close);
+    return () => window.removeEventListener('dadix-column-drag-start', close);
+  }, []);
+
+  return (
+    <DropdownMenu
+      modal={false}
+      open={open}
+      onOpenChange={(next) => {
+        if (next && (didDragRef.current || rightClickRef.current)) {
+          rightClickRef.current = false;
+          return;
+        }
+        setOpen(next);
+      }}
+    >
+      <DropdownMenuTrigger asChild>
+        <button
+          type='button'
+          className='group/colhead relative z-10 inline-flex max-w-full min-w-0 cursor-default select-none items-center rounded-none border-0 bg-transparent p-0 text-left text-sm font-medium outline-none hover:z-20 focus:bg-transparent focus-visible:z-20 focus-visible:outline-none active:bg-transparent data-[state=open]:z-20 [-webkit-touch-callout:none] [-webkit-user-select:none]'
+          onPointerDown={(event) => {
+            if (event.button === 2) {
+              rightClickRef.current = true;
+              event.preventDefault();
+              event.stopPropagation();
+              setOpen(false);
+              event.currentTarget.blur();
+              onRightClickEdit?.();
+              return;
+            }
+            if (event.button === 0) {
+              pointerStartRef.current = { x: event.clientX, y: event.clientY };
+              didDragRef.current = false;
+            }
+          }}
+          onPointerMove={(event) => {
+            if (!pointerStartRef.current || event.buttons !== 1) return;
+            const dx = event.clientX - pointerStartRef.current.x;
+            const dy = event.clientY - pointerStartRef.current.y;
+            if (Math.hypot(dx, dy) > 8) didDragRef.current = true;
+          }}
+          onClick={(event) => {
+            if (didDragRef.current) {
+              event.preventDefault();
+              event.stopPropagation();
+              setOpen(false);
+              return;
+            }
+            setOpen(true);
+          }}
+          onContextMenu={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            setOpen(false);
+            event.currentTarget.blur();
+          }}
+        >
+          <span
+            aria-hidden
+            className='absolute -inset-y-1 -left-2.5 -right-2 rounded-md bg-transparent group-hover/colhead:bg-foreground/10 group-focus-visible/colhead:bg-foreground/10 group-data-[state=open]/colhead:bg-foreground/10'
+          />
+          <span className='relative min-w-0 truncate leading-5 select-none'>{label}</span>
+        </button>
+      </DropdownMenuTrigger>
+      {children}
+    </DropdownMenu>
+  );
 }
 
 interface useTableColumnsRendererProps {
@@ -81,8 +214,9 @@ interface useTableColumnsRendererProps {
   setSearchFilters: (_searchFilters: IFilter[]) => void;
   sortingRule: import('@/types').ISortingRules;
   setSortingRule: (_rules: import('@/types').ISortingRules) => void;
-  /** One-time sort from column header (no persistence, no checkmark). */
+  /** Persist a column-header sort on the current view. */
   onOneTimeSort?: (_fieldId: number, _direction: 'ASC' | 'DESC') => void;
+  onOpenSortingRule?: () => void;
   handleRecordChange: ({
     ..._args
   }: {
@@ -107,6 +241,7 @@ export function useTableColumnsRenderer({
   sortingRule,
   setSortingRule,
   onOneTimeSort,
+  onOpenSortingRule,
   handleRecordChange,
   editField,
   canEditTables = false,
@@ -191,9 +326,8 @@ export function useTableColumnsRenderer({
   return useMemo(() => {
     const baseColumns: ColumnDef<Record<string, unknown>>[] = [];
     if (!tableId) return [];
-    if (!gridViewColumns && !tableColumns) return [];
-    const columnsType = gridViewColumns ? 'GridViewFields' : 'Fields';
-    const isGridView = columnsType === 'GridViewFields';
+    if (!gridViewColumns?.length && !tableColumns?.length) return [];
+    const isGridView = (gridViewColumns?.length ?? 0) > 0;
     const tableFieldsForLookup = tableColumns;
     const resolvedColumns = isGridView
       ? gridViewColumns?.map((field) => viewFieldToTableField(field)) ?? []
@@ -201,16 +335,22 @@ export function useTableColumnsRenderer({
 
     let stickyLeftAccum = 0;
     (isGridView ? gridViewColumns : tableColumns)?.forEach((field) => {
-      const displayedName = isGridView
-        ? (field as IDadixGridViewField).fieldName
-        : field.name;
+      const tableField = tableFieldsForLookup?.find(
+        (item) => String(item.id) === String(isGridView ? (field as IDadixGridViewField).fieldId : field.id)
+      );
+      const displayedName =
+        tableField?.name ||
+        (isGridView ? (field as IDadixGridViewField).fieldName : field.name) ||
+        field.name ||
+        '';
       const id = isGridView ? field.id : -field.id;
       const fieldId = isGridView
         ? (field as IDadixGridViewField).fieldId
         : field.id;
-      const fieldName = isGridView
-        ? (field as IDadixGridViewField).fieldName
-        : field.name;
+      const fieldName =
+        tableField?.name ||
+        (isGridView ? (field as IDadixGridViewField).fieldName : field.name) ||
+        field.name;
       const fieldOrder = isGridView
         ? (field as IDadixGridViewField).fieldOrder
         : field.order;
@@ -240,12 +380,12 @@ export function useTableColumnsRenderer({
           return (
             <>
               {canEditTables ? (
-                <DropdownMenu modal={false}>
-                  <DropdownMenuTrigger asChild>
-                    <span className='inline-flex p-1.5 rounded-md cursor-pointer hover:bg-foreground/4 overflow-hidden max-w-full data-[state=open]:bg-foreground/4'>
-                      {displayedName}
-                    </span>
-                  </DropdownMenuTrigger>
+                <ColumnHeaderDropdown
+                  label={displayedName}
+                  onRightClickEdit={
+                    fieldName === 'id' ? undefined : () => editField(fieldId)
+                  }
+                >
                   <DropdownMenuPortal>
                     <DropdownMenuContent
                       align='start'
@@ -257,6 +397,7 @@ export function useTableColumnsRenderer({
                         fieldId={fieldId}
                         fieldType={field.type}
                         onOneTimeSort={onOneTimeSort}
+                        onOpenSortingRule={onOpenSortingRule}
                       />
                     )}
                     {gridViewId && tableId && (
@@ -330,9 +471,11 @@ export function useTableColumnsRenderer({
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                   </DropdownMenuPortal>
-                </DropdownMenu>
+                </ColumnHeaderDropdown>
               ) : (
-                displayedName
+                <span className='relative inline-flex max-w-full min-w-0 items-center p-0 text-sm font-medium'>
+                  <span className='relative min-w-0 truncate leading-5'>{displayedName}</span>
+                </span>
               )}
             </>
           );
@@ -346,11 +489,25 @@ export function useTableColumnsRenderer({
           function copyAction(evnt: Event, value?: string | undefined) {
             evnt.preventDefault();
             evnt.stopPropagation();
-            copyText(value ?? (finalValue as string));
-            toast.success(t('common.copied'), {
-              icon: <LucideCopy />,
-              style: { width: 'unset' },
-            });
+            copyText(String(value ?? finalValue ?? ''))
+              .then(() => {
+                toast.success(t('table.copyToClipboard'), {
+                  icon: <LucideCopy className='size-3.5 shrink-0' />,
+                  duration: 1800,
+                  className:
+                    'copy-toast-pill rounded-full! px-3.5! py-1.5! shadow-md! gap-2! whitespace-nowrap! flex-nowrap!',
+                  style: {
+                    width: 'max-content',
+                    minWidth: 'max-content',
+                    maxWidth: '90vw',
+                    whiteSpace: 'nowrap',
+                    borderRadius: 9999,
+                  },
+                });
+              })
+              .catch(() => {
+                toast.error(t('table.copyToClipboard'));
+              });
           }
 
           switch (field.type) {
@@ -377,36 +534,42 @@ export function useTableColumnsRenderer({
               const choiceValue = finalValue != null ? String(finalValue) : undefined;
               if (showDropdown) {
                 return (
-                  <span
-                    onClick={
-                      field.action === 'copy'
-                        ? (evnt) => {
-                            copyAction(evnt as unknown as Event);
-                          }
-                        : undefined
-                    }
+                  <OpenOnCellEditRequest
+                    recordId={row.original.id as number}
+                    fieldId={fieldId}
+                    fieldName={fieldName}
                   >
-                    <Tag
-                      value={choiceValue}
-                      size='default'
-                      options={field.options}
-                      className='w-fit'
-                      disabled={false}
-                      multi={isMulti}
-                      onValueChange={(newValue: string) => {
-                        const recordId = row.original.id;
-                        try {
-                          handleRecordChange({
-                            recordId: recordId as number,
-                            recordFieldName: fieldName,
-                            value: newValue,
-                          });
-                        } catch (err: unknown) {
-                          console.error('Update error:', err);
-                        }
-                      }}
-                    />
-                  </span>
+                    <span
+                      onClick={
+                        field.action === 'copy'
+                          ? (evnt) => {
+                              copyAction(evnt as unknown as Event);
+                            }
+                          : undefined
+                      }
+                    >
+                      <Tag
+                        value={choiceValue}
+                        size='default'
+                        options={field.options}
+                        className='w-fit'
+                        disabled={false}
+                        multi={isMulti}
+                        onValueChange={(newValue: string) => {
+                          const recordId = row.original.id;
+                          try {
+                            handleRecordChange({
+                              recordId: recordId as number,
+                              recordFieldName: fieldName,
+                              value: newValue,
+                            });
+                          } catch (err: unknown) {
+                            console.error('Update error:', err);
+                          }
+                        }}
+                      />
+                    </span>
+                  </OpenOnCellEditRequest>
                 );
               }
               const displayValue = (() => {
@@ -438,30 +601,37 @@ export function useTableColumnsRenderer({
             }
             case 'BOOLEAN':
               return (
-                <Switch
-                  checked={Boolean(finalValue)}
-                  disabled={!isCellEditable(field.action) || !canEditRecords}
-                  className='data-disabled:opacity-100 data-disabled:pointer-events-none'
-                  onCheckedChange={(checked) => {
-                    const recordId = row.original.id;
-                    try {
-                      handleRecordChange({
-                        recordId: recordId as number,
-                        recordFieldName: fieldName,
-                        value: checked,
-                      });
-                    } catch (err) {
-                      console.error('Update error:', err);
-                    }
-                  }}
-                  onClick={(e) => e.stopPropagation()}
-                />
+                <OpenOnCellEditRequest
+                  recordId={row.original.id as number}
+                  fieldId={fieldId}
+                  fieldName={fieldName}
+                >
+                  <Switch
+                    checked={Boolean(finalValue)}
+                    disabled={!isCellEditable(field.action) || !canEditRecords}
+                    className='data-disabled:opacity-100 data-disabled:pointer-events-none'
+                    onCheckedChange={(checked) => {
+                      const recordId = row.original.id;
+                      try {
+                        handleRecordChange({
+                          recordId: recordId as number,
+                          recordFieldName: fieldName,
+                          value: checked,
+                        });
+                      } catch (err) {
+                        console.error('Update error:', err);
+                      }
+                    }}
+                    onClick={(e) => e.stopPropagation()}
+                  />
+                </OpenOnCellEditRequest>
               );
             case 'INTEGER':
               return (
                 <NumberCell
                   recordId={row.original.id as number}
                   recordFieldName={fieldName}
+                  fieldId={fieldId}
                   fieldAction={field.action}
                   value={finalValue as number}
                   placeholder={field.placeholder}
@@ -508,10 +678,7 @@ export function useTableColumnsRenderer({
                               copyAction(evnt as unknown as Event, value);
                               break;
                             case 'openUrl': {
-                              const isEmail = new RegExp(
-                                /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/
-                              ).test(value);
-                              window.open(isEmail ? `mailto:${value}` : value);
+                              openExternalUrl(value);
                               break;
                             }
                           }
@@ -547,14 +714,51 @@ export function useTableColumnsRenderer({
             case 'AI':
               return (
                 <span className='text-sm whitespace-nowrap'>
-                  {finalValue != null && finalValue !== '' ? String(finalValue) : (field.placeholder ?? 'Strings in "Anführungszeichen", Felder mit .feldname')}
+                  {finalValue != null && finalValue !== '' ? String(finalValue) : (field.placeholder ?? t('table.formulaPlaceholder'))}
                 </span>
+              );
+            case 'FILE':
+              return (
+                <OpenOnCellEditRequest
+                  recordId={row.original.id as number}
+                  fieldId={fieldId}
+                  fieldName={fieldName}
+                >
+                  <span
+                    className='flex h-full min-w-0 items-center px-0.5'
+                    onClick={
+                      field.action === 'copy'
+                        ? (evnt) => {
+                            copyAction(
+                              evnt as unknown as Event,
+                              fileFieldDisplayName(finalValue)
+                            );
+                          }
+                        : undefined
+                    }
+                  >
+                    <FileFieldControl
+                      compact
+                      value={finalValue}
+                      disabled={!isCellEditable(field.action) || !canEditRecords}
+                      placeholder={field.placeholder}
+                      onChange={(next) => {
+                        handleRecordChange({
+                          recordId: row.original.id as number,
+                          recordFieldName: fieldName,
+                          value: next,
+                        });
+                      }}
+                    />
+                  </span>
+                </OpenOnCellEditRequest>
               );
             case 'DATE':
               return (
                 <DateCell
                   recordId={row.original.id as number}
                   recordFieldName={fieldName}
+                  fieldId={fieldId}
                   fieldAction={field.action}
                   value={finalValue as string}
                   placeholder={field.placeholder}
@@ -579,15 +783,17 @@ export function useTableColumnsRenderer({
               );
           }
         },
-        size: Math.max(field.size || 0, 140),
+        size: typeof field.size === 'number' && field.size > 0 ? field.size : 140,
         enableResizing: canEditTables,
         meta: {
           ...field,
+          fieldName: displayedName,
+          name: displayedName,
           fixed: isGridView ? isFixed : false,
           stickyLeft: isGridView ? columnStickyLeft : 0,
         },
       };
-      if (field.isVisible) baseColumns.push(column);
+      if (field.isVisible !== false) baseColumns.push(column);
     });
 
     // View-only buttons: one column per button (only in grid view, not table/record editor)
@@ -599,7 +805,9 @@ export function useTableColumnsRenderer({
           baseColumns.push({
             id: `view-button-${btn.id}`,
             header: () => (
-              <span className='font-medium text-foreground'>{btn.label}</span>
+              <span className='flex h-full w-full items-center px-2.5 text-sm font-medium text-foreground'>
+                {btn.label}
+              </span>
             ),
             cell: () => (
               <Button variant='outline' size='sm' className='shrink-0'>
@@ -709,12 +917,14 @@ interface SortByColumnDropdownMenuItemProps {
   fieldId: number;
   fieldType: DadixFieldDataTypes;
   onOneTimeSort?: (_fieldId: number, _direction: 'ASC' | 'DESC') => void;
+  onOpenSortingRule?: () => void;
 }
 function SortByColumnDropdownMenuItem({
   t,
   fieldId,
   fieldType,
   onOneTimeSort,
+  onOpenSortingRule,
 }: SortByColumnDropdownMenuItemProps) {
   return (
     <DropdownMenuSub>
@@ -734,6 +944,19 @@ function SortByColumnDropdownMenuItem({
               {getSortingRuleRanges(fieldType)[direction === 'ASC' ? 1 : 0]}
             </DropdownMenuItem>
           ))}
+          {onOpenSortingRule && (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                onSelect={() => {
+                  window.setTimeout(() => onOpenSortingRule(), 80);
+                }}
+              >
+                <LucideArrowDownUp className='size-4' />
+                Sorting rule
+              </DropdownMenuItem>
+            </>
+          )}
         </DropdownMenuSubContent>
       </DropdownMenuPortal>
     </DropdownMenuSub>
@@ -759,16 +982,16 @@ function ColumnActions({
       Exclude<FieldActions, null>,
       DadixFieldDataTypes[]
     > = {
-      copy: ['AI', 'CHOICE', 'CODE', 'DATE', 'FORMULA', 'INTEGER', 'SERIAL', 'TEXT', 'UUID'],
-      edit: ['BOOLEAN', 'CHOICE', 'DATE', 'INTEGER', 'TEXT'],
+      copy: ['AI', 'CHOICE', 'CODE', 'DATE', 'FILE', 'FORMULA', 'INTEGER', 'SERIAL', 'TEXT', 'UUID'],
+      edit: ['BOOLEAN', 'CHOICE', 'DATE', 'FILE', 'INTEGER', 'TEXT'],
       openUrl: ['CODE', 'FORMULA', 'TEXT'],
     };
     const actions: { action: FieldActions; labelKey: string; icon: ReactNode }[] =
       [
         {
           action: null,
-          labelKey: 'table.actionNothing',
-          icon: <LucideCircleOff />,
+          labelKey: 'table.actionOpen',
+          icon: <LucidePanelRightOpen />,
         },
       ];
     if (actionPerType.copy.indexOf(fieldType) >= 0) {
@@ -818,7 +1041,7 @@ function ColumnActions({
           <DropdownMenuSubContent className='**:**:text-inherit!'>
             {columnActions.map((columnAction) => (
               <DropdownMenuItem
-                key={columnAction.action}
+                key={columnAction.action ?? 'open'}
                 onClick={() => {
                   handleUpdate(columnAction.action);
                 }}
@@ -878,6 +1101,13 @@ function TextCell({
     lastSavedValueRef.current = value;
   }, [recordId]);
 
+  useEventHandler(dadixEvents.recordEvents.onEditCell, (evnt) => {
+    if (!isCellEditable(fieldAction)) return;
+    if (cellEditEventMatches(evnt, recordId, fieldId, recordFieldName)) {
+      setIsEditActive(true);
+    }
+  });
+
   if (!isCellEditable(fieldAction))
     return (
       <span
@@ -893,10 +1123,7 @@ function TextCell({
             case 'openUrl': {
               evnt.stopPropagation();
               evnt.preventDefault();
-              const isEmail = new RegExp(
-                /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/
-              ).test(value);
-              window.open(isEmail ? `mailto:${value}` : value);
+              openExternalUrl(value);
               break;
             }
           }
@@ -947,6 +1174,11 @@ function TextCell({
         style={{ width: `${fieldSize}px` }}
         className='relative p-0!'
         onClick={(evnt) => evnt.stopPropagation()}
+        onKeyDown={(evnt) => {
+          if (evnt.key !== 'Enter' || evnt.shiftKey) return;
+          evnt.preventDefault();
+          setIsEditActive(false);
+        }}
       >
         <TextFieldInput
           recordId={recordId}
@@ -959,21 +1191,6 @@ function TextCell({
           textOptions={textOptions}
           placeholder={placeholder}
         />
-        <Button
-          onClick={() => {
-            setIsEditActive(false);
-            if (inputValue === lastSavedValueRef.current) return;
-            lastSavedValueRef.current = inputValue;
-            handleRecordChange({
-              recordId,
-              recordFieldName,
-              value: inputValue,
-            });
-          }}
-          className='size-6 p-0! absolute bottom-0.5 right-0.5 rounded-full'
-        >
-          <LucideArrowUp className='size-3.5' />
-        </Button>
       </PopoverContent>
     </Popover>
   );
@@ -982,6 +1199,7 @@ function TextCell({
 interface NumberCellProps {
   recordId: number;
   recordFieldName: string;
+  fieldId: number;
   value: number;
   fieldAction: FieldActions;
   placeholder?: string;
@@ -998,6 +1216,7 @@ interface NumberCellProps {
 function NumberCell({
   recordId,
   recordFieldName,
+  fieldId,
   value,
   fieldAction,
   placeholder,
@@ -1014,6 +1233,13 @@ function NumberCell({
     lastSavedValueRef.current = value;
   }, [recordId]);
 
+  useEventHandler(dadixEvents.recordEvents.onEditCell, (evnt) => {
+    if (!isCellEditable(fieldAction)) return;
+    if (cellEditEventMatches(evnt, recordId, fieldId, recordFieldName)) {
+      setIsEditActive(true);
+    }
+  });
+
   if (isEditActive)
     return (
       <Input
@@ -1025,6 +1251,11 @@ function NumberCell({
         onChange={(evnt) => {
           const newValue = evnt.target.value;
           setInputValue(parseInt(newValue) || 0);
+        }}
+        onKeyDown={(evnt) => {
+          if (evnt.key !== 'Enter') return;
+          evnt.preventDefault();
+          evnt.currentTarget.blur();
         }}
         onBlur={() => {
           setIsEditActive(false);
@@ -1067,6 +1298,7 @@ function NumberCell({
 interface DateCellProps {
   recordId: number;
   recordFieldName: string;
+  fieldId: number;
   value: string;
   fieldAction: FieldActions;
   placeholder?: string;
@@ -1082,6 +1314,7 @@ interface DateCellProps {
 function DateCell({
   recordId,
   recordFieldName,
+  fieldId,
   value,
   fieldAction,
   placeholder,
@@ -1089,6 +1322,13 @@ function DateCell({
   handleRecordChange,
 }: DateCellProps) {
   const [isOpen, setIsOpen] = useState<boolean>(false);
+
+  useEventHandler(dadixEvents.recordEvents.onEditCell, (evnt) => {
+    if (!isCellEditable(fieldAction)) return;
+    if (cellEditEventMatches(evnt, recordId, fieldId, recordFieldName)) {
+      setIsOpen(true);
+    }
+  });
 
   const dateValue = useMemo(
     () =>

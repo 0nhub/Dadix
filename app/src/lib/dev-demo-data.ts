@@ -3,7 +3,7 @@
  * Nur aktiv wenn NODE_ENV === 'development'.
  */
 
-import type { Table, Field } from '@/types';
+import type { Table, Field, FieldActions } from '@/types';
 import type { IDadixView, IDadixGridView } from '@/types';
 
 export const DEV_DEMO_PROJECT_ID = 'dev-demo-project';
@@ -452,7 +452,7 @@ export function setDevDemoFieldOrder(
   }
 }
 
-/** Field overrides (placeholder, defaultValue, formula, aiOptions) per field id for dev/demo tables. */
+/** Field overrides (placeholder, defaultValue, formula, aiOptions, action) per field id for dev/demo tables. */
 const DEV_FIELD_OVERIDES_PREFIX = 'dadix-dev-field-overrides-';
 
 export type DevFieldOverride = {
@@ -460,6 +460,7 @@ export type DevFieldOverride = {
   defaultValue?: string;
   formula?: string;
   aiOptions?: { prompt: string; outputType: string; apiKeyId: string };
+  action?: FieldActions;
 };
 
 export function getDevDemoFieldOverrides(
@@ -490,7 +491,13 @@ export function setDevDemoFieldOverride(
     const id = String(fieldId);
     const next = { ...current, [id]: { ...(current[id] ?? {}), ...data } };
     const o = next[id];
-    if (o.placeholder === undefined && o.defaultValue === undefined && o.formula === undefined && o.aiOptions === undefined) {
+    if (
+      o.placeholder === undefined &&
+      o.defaultValue === undefined &&
+      o.formula === undefined &&
+      o.aiOptions === undefined &&
+      !('action' in o)
+    ) {
       delete next[id];
     }
     localStorage.setItem(key, JSON.stringify(next));
@@ -705,7 +712,7 @@ export function createLocalTable(projectId: string, name: string, icon: string):
         order: 0,
         isVisible: true,
         contentAlign: 'left',
-        action: 'edit',
+        action: null,
       },
     ],
   };
@@ -745,8 +752,49 @@ export function tableFieldsToGridViewFields(fields: Field[] | undefined) {
     fieldName: field.name,
     fieldOrder: typeof field.order === 'number' ? field.order : index,
     isVisible: field.isVisible !== false,
-    action: field.action ?? 'edit',
+    action: field.action ?? null,
   }));
+}
+
+/** Table-level click action (copy/edit/openUrl) — not view-specific. */
+function mergeViewFields(
+  seedFields: IDadixGridView['fields'] | undefined,
+  overrideFields: IDadixGridView['fields'] | undefined
+): IDadixGridView['fields'] {
+  const seed = (seedFields ?? []).map((field) => ({ ...field }));
+  if (!overrideFields?.length) return seed;
+  const leftover = new Map(
+    overrideFields.map((field) => [Number(field.fieldId ?? field.id), { ...field }])
+  );
+  const merged = seed.map((field) => {
+    const key = Number(field.fieldId ?? field.id);
+    const override = leftover.get(key);
+    leftover.delete(key);
+    return override ? { ...field, ...override } : field;
+  });
+  return [...merged, ...leftover.values()];
+}
+
+export function applyPersistedFieldActions<
+  T extends { id?: number; fieldId?: number; action?: FieldActions },
+>(tableId: string | number, fields: T[] | undefined): T[] {
+  const list = fields ?? [];
+  const overrides = getDevDemoFieldOverrides(tableId);
+  const table = isDevTable(tableId) ? findLocalTableById(tableId) : undefined;
+  const fromTable = new Map(
+    (table?.fields ?? []).map((field) => [Number(field.id), field.action])
+  );
+  return list.map((field) => {
+    const fieldId = Number(field.fieldId ?? field.id);
+    const override = overrides[String(fieldId)];
+    if (override && 'action' in override) {
+      return { ...field, action: override.action ?? null };
+    }
+    if (fromTable.has(fieldId)) {
+      return { ...field, action: fromTable.get(fieldId) ?? null };
+    }
+    return field;
+  });
 }
 
 export function findLocalTable(projectId: string, tableId: string | number): Table | undefined {
@@ -782,4 +830,309 @@ export function setDevTableRecords(tableId: string | number, records: Record<str
   } catch {
     // ignore
   }
+}
+
+const LOCAL_VIEWS_PREFIX = 'dadix-local-views-';
+const VIEW_COLUMN_LAYOUT_PREFIX = 'dadix-view-column-layout-';
+
+export type ViewColumnLayoutPatch = {
+  size?: number;
+  order?: number;
+  fieldOrder?: number;
+  fixed?: boolean;
+  isVisible?: boolean;
+};
+
+function viewColumnLayoutKey(tableId: string | number, viewId: string | number) {
+  return `${VIEW_COLUMN_LAYOUT_PREFIX}${tableId}-${viewId}`;
+}
+
+export function getViewColumnLayout(
+  tableId: string | number,
+  viewId: string | number
+): Record<string, ViewColumnLayoutPatch> {
+  if (typeof localStorage === 'undefined') return {};
+  try {
+    const raw = localStorage.getItem(viewColumnLayoutKey(tableId, viewId));
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as unknown;
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? (parsed as Record<string, ViewColumnLayoutPatch>)
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+export function patchViewColumnLayout(
+  tableId: string | number,
+  viewId: string | number,
+  fieldId: number,
+  patch: ViewColumnLayoutPatch
+): void {
+  if (typeof localStorage === 'undefined') return;
+  try {
+    const current = getViewColumnLayout(tableId, viewId);
+    const id = String(fieldId);
+    const next = {
+      ...current,
+      [id]: { ...(current[id] ?? {}), ...patch },
+    };
+    localStorage.setItem(viewColumnLayoutKey(tableId, viewId), JSON.stringify(next));
+  } catch {
+    /* ignore */
+  }
+}
+
+export function applyViewColumnLayout<
+  T extends {
+    id?: number;
+    fieldId?: number;
+    size?: number;
+    order?: number;
+    fieldOrder?: number;
+    fixed?: boolean;
+    isVisible?: boolean;
+  },
+>(tableId: string | number, viewId: string | number, fields: T[] | undefined): T[] {
+  const layout = getViewColumnLayout(tableId, viewId);
+  return (fields ?? []).map((field) => {
+    const patch =
+      layout[String(field.fieldId ?? field.id)] ?? layout[String(field.id)];
+    return patch ? { ...field, ...patch } : field;
+  });
+}
+
+export function usesLocalViews(tableId: string | number | undefined): boolean {
+  return isDevDemoTable(tableId) || isDevTable(tableId);
+}
+
+export function getSeedViewForTable(
+  tableId: string | number
+): IDadixGridView | undefined {
+  const id = String(tableId ?? '');
+  if (id === DEV_DEMO_TABLE_4_ID)
+    return {
+      ...DEV_DEMO_VIEW_4,
+      fields: (DEV_DEMO_VIEW_4.fields ?? []).map((field) => ({ ...field })),
+    };
+  if (id === DEV_DEMO_TABLE_3_ID)
+    return {
+      ...DEV_DEMO_VIEW_3,
+      fields: (DEV_DEMO_VIEW_3.fields ?? []).map((field) => ({ ...field })),
+    };
+  if (id === DEV_DEMO_TABLE_2_ID)
+    return {
+      ...DEV_DEMO_VIEW_2,
+      fields: (DEV_DEMO_VIEW_2.fields ?? []).map((field) => ({ ...field })),
+    };
+  if (id === DEV_DEMO_TABLE_ID)
+    return {
+      ...DEV_DEMO_VIEW,
+      fields: (DEV_DEMO_VIEW.fields ?? []).map((field) => ({ ...field })),
+    };
+  if (isDevTable(tableId)) {
+    const table = findLocalTableById(tableId);
+    return {
+      id: 1,
+      tableId: id,
+      name: 'Alle Einträge',
+      icon: 'LayoutGrid',
+      order: 0,
+      filter: '',
+      sort: '',
+      type: 'gridView',
+      fields: tableFieldsToGridViewFields(table?.fields),
+    };
+  }
+  return undefined;
+}
+
+export function getLocalExtraViews(tableId: string | number): IDadixGridView[] {
+  if (process.env.NODE_ENV !== 'development' || typeof localStorage === 'undefined') {
+    return [];
+  }
+  try {
+    const raw = localStorage.getItem(LOCAL_VIEWS_PREFIX + tableId);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as unknown;
+    return Array.isArray(parsed) ? (parsed as IDadixGridView[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function persistTableFieldAction(
+  tableId: string | number,
+  fieldId: number,
+  action: FieldActions
+): void {
+  setDevDemoFieldOverride(tableId, fieldId, { action });
+
+  const extraFields = getDevDemoExtraFields(tableId);
+  if (extraFields.some((field) => Number(field.id) === Number(fieldId))) {
+    setDevDemoExtraFields(
+      tableId,
+      extraFields.map((field) =>
+        Number(field.id) === Number(fieldId) ? { ...field, action } : field
+      )
+    );
+  }
+
+  const extras = getLocalExtraViews(tableId);
+  if (!extras.length) return;
+  setLocalExtraViews(
+    tableId,
+    extras.map((view) => ({
+      ...view,
+      fields: (view.fields ?? []).map((field) =>
+        Number(field.fieldId) === Number(fieldId) ||
+        Number(field.id) === Number(fieldId)
+          ? { ...field, action }
+          : field
+      ),
+    }))
+  );
+}
+
+export function setLocalExtraViews(
+  tableId: string | number,
+  views: IDadixGridView[]
+): void {
+  if (process.env.NODE_ENV !== 'development' || typeof localStorage === 'undefined') {
+    return;
+  }
+  try {
+    localStorage.setItem(LOCAL_VIEWS_PREFIX + tableId, JSON.stringify(views));
+  } catch {
+    // ignore
+  }
+}
+
+export function getLocalViewsForTable(
+  tableId: string | number
+): IDadixGridView[] {
+  const seed = getSeedViewForTable(tableId);
+  const extras = getLocalExtraViews(tableId);
+  const extrasById = new Map(extras.map((view) => [Number(view.id), view]));
+  const list: IDadixGridView[] = [];
+  if (seed) {
+    const override = extrasById.get(Number(seed.id));
+    extrasById.delete(Number(seed.id));
+    const source = override
+      ? {
+          ...seed,
+          ...override,
+          fields: mergeViewFields(seed.fields, override.fields),
+        }
+      : seed;
+    list.push({
+      ...source,
+      fields: applyViewColumnLayout(
+        tableId,
+        source.id,
+        applyPersistedFieldActions(tableId, source.fields)
+      ),
+    });
+  }
+  for (const extra of extras) {
+    if (!extrasById.has(Number(extra.id))) continue;
+    extrasById.delete(Number(extra.id));
+    list.push({
+      ...extra,
+      fields: applyViewColumnLayout(
+        tableId,
+        extra.id,
+        applyPersistedFieldActions(
+          tableId,
+          (extra.fields ?? []).map((field) => ({ ...field }))
+        )
+      ),
+    });
+  }
+  return list
+    .map((view, index) => ({ ...view, order: view.order ?? index }))
+    .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+}
+
+export function findLocalView(
+  tableId: string | number,
+  viewId: string | number
+): IDadixGridView | undefined {
+  return getLocalViewsForTable(tableId).find(
+    (view) => `${view.id}` === `${viewId}`
+  );
+}
+
+export function createLocalView({
+  tableId,
+  name,
+  icon,
+  type,
+  order,
+}: {
+  tableId: string;
+  name: string;
+  icon: string;
+  type: string;
+  order?: number;
+}): IDadixGridView {
+  const existing = getLocalViewsForTable(tableId);
+  const nextId =
+    existing.reduce((max, view) => Math.max(max, Number(view.id) || 0), 0) + 1;
+  const seed = getSeedViewForTable(tableId);
+  const table = findLocalTableById(tableId);
+  const fields = applyPersistedFieldActions(
+    tableId,
+    seed?.fields?.length
+      ? seed.fields.map((field) => ({ ...field }))
+      : tableFieldsToGridViewFields(table?.fields)
+  );
+  const view: IDadixGridView = {
+    id: nextId,
+    tableId: String(tableId),
+    name: name.trim() || `View${existing.length + 1}`,
+    icon: icon || 'LayoutGrid',
+    order: order ?? existing.length,
+    filter: '',
+    sort: '',
+    type: (type || 'gridView') as IDadixGridView['type'],
+    fields,
+  };
+  setLocalExtraViews(tableId, [...getLocalExtraViews(tableId), view]);
+  return view;
+}
+
+export function patchLocalView(
+  tableId: string | number,
+  viewId: number,
+  data: Partial<
+    Pick<IDadixGridView, 'name' | 'icon' | 'order' | 'filter' | 'sort' | 'fields'>
+  >
+): IDadixGridView | undefined {
+  const extras = getLocalExtraViews(tableId);
+  const extraIndex = extras.findIndex((view) => `${view.id}` === `${viewId}`);
+  if (extraIndex >= 0) {
+    const next = extras.map((view, index) =>
+      index === extraIndex ? { ...view, ...data } : view
+    );
+    setLocalExtraViews(tableId, next);
+    return next[extraIndex];
+  }
+  const seed = getSeedViewForTable(tableId);
+  if (!seed || `${seed.id}` !== `${viewId}`) return undefined;
+  const patched = { ...seed, ...data };
+  setLocalExtraViews(tableId, [...extras, patched]);
+  return patched;
+}
+
+export function deleteLocalView(
+  tableId: string | number,
+  viewId: number
+): boolean {
+  const extras = getLocalExtraViews(tableId);
+  const next = extras.filter((view) => `${view.id}` !== `${viewId}`);
+  if (next.length === extras.length) return false;
+  setLocalExtraViews(tableId, next);
+  return true;
 }

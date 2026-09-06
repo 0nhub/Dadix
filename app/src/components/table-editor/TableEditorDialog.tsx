@@ -3,24 +3,19 @@ import { createPortal } from 'react-dom';
 
 import { Button } from '@/components/ui/button';
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import {
+  LucideChevronDown,
   LucideMoreVertical,
   LucidePencil,
   LucideTrash2,
   LucideX,
 } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import { TableEditor } from '@/components/table-editor/TableEditor';
 import { TableIcon } from '@/components/table-icon/TableIcon';
 
@@ -29,6 +24,8 @@ import { useCurrentProjectContext } from '@/context/CurrentProjectContext';
 import { useEventHandler } from '@/hooks/useEventHandler';
 import { openUpdateTableDialog } from './UpdateTableDialog';
 import { openDeleteTableConfirmDialog } from './DeleteTableDialog';
+import { dadixEvents } from '@/constants/events';
+import { openDesktopAuxWindow } from '@/lib/desktopShell';
 
 const OPEN_TABLE_EDITOR_DIALOG = 'dadix--open-table-editor-dialog-event';
 
@@ -51,60 +48,91 @@ function TableEditorDialog() {
     [isOpen]
   );
 
+  const closeEditor = () => {
+    setIsOpen(false);
+    if (!tableId) return;
+    const query = new URLSearchParams(
+      (typeof window !== 'undefined' ? window.location.hash.split('?')[1] : '') ??
+        ''
+    );
+    window.dispatchEvent(
+      new CustomEvent(dadixEvents.tableEvents.onRefetchTable, {
+        detail: { tableId },
+      })
+    );
+    window.dispatchEvent(
+      new CustomEvent(dadixEvents.gridViewEvents.onRefetchView, {
+        detail: {
+          tableId,
+          viewId: query.get('viewId'),
+        },
+      })
+    );
+  };
+
   if (!isOpen) return null;
 
   return (
     <>
       {createPortal(
-        <div className='fixed top-0 left-0 w-full h-full bg-black/20 overflow-hidden z-20'>
+        <div className='fixed inset-0 bg-black/20 overflow-hidden z-[200]'>
           <div
             role='dialog'
-            className='flex flex-col top-0 left-0 w-full h-full bg-background border-[5px solid #f00] md:m-[10px] md:w-[calc(100%-20px)] md:h-[calc(100%-20px)] md:rounded-md border overflow-hidden '
+            className='flex h-full w-full flex-col overflow-hidden border bg-background'
           >
-            <div className='sticky top-0 lef-0 flex flex-row gap-2 p-4 bg-background'>
-              <Button
-                variant='outline'
-                size='icon'
-                onClick={() => setIsOpen(false)}
-              >
-                <LucideX />
-              </Button>
+            <header className='dadix-app-titlebar z-50 flex h-11 min-h-11 w-full items-stretch border-b bg-background'>
               {currentProjectCtx.id === projectId && (
-                <Select
-                  open={isSelectTableOpen}
-                  onOpenChange={setIsSelectTableOpen}
-                  value={`${tableId}`}
-                  onValueChange={(newTableId) => {
-                    setTableId(newTableId);
-                    setIsSelectTableOpen(false);
-                  }}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {currentProjectCtx.tables?.map((table) => {
-                      return (
-                        <SelectItem value={`${table.id}`} key={table.id}>
-                          <TableIcon
-                            name={table.icon}
-                            className='text-foreground'
-                          />
-                          <span>{table.name}</span>
-                        </SelectItem>
-                      );
-                    })}
-                  </SelectContent>
-                </Select>
+                <DropdownMenu open={isSelectTableOpen} onOpenChange={setIsSelectTableOpen}>
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      type='button'
+                      className={cn(
+                        'inline-flex h-full w-auto shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-none border-0 border-r border-border bg-transparent px-3 text-sm font-medium shadow-none hover:bg-foreground/6'
+                      )}
+                    >
+                      <TableIcon
+                        name={
+                          currentProjectCtx.tables?.find((table) => `${table.id}` === `${tableId}`)
+                            ?.icon
+                        }
+                        className='size-4 shrink-0 text-foreground'
+                      />
+                      <span className='whitespace-nowrap'>
+                        {currentProjectCtx.tables?.find((table) => `${table.id}` === `${tableId}`)
+                          ?.name || 'Table'}
+                      </span>
+                      <LucideChevronDown className='size-4 shrink-0 opacity-70' />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align='start' className='min-w-46'>
+                    {currentProjectCtx.tables?.map((table) => (
+                      <DropdownMenuItem
+                        key={table.id}
+                        onClick={() => {
+                          setTableId(`${table.id}`);
+                          setIsSelectTableOpen(false);
+                        }}
+                      >
+                        <TableIcon name={table.icon} className='text-foreground' />
+                        <span>{table.name}</span>
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
               )}
-              <div className='grow shrink' />
+              <div className='h-full min-w-8 flex-1' />
               <DropdownMenu modal={false}>
                 <DropdownMenuTrigger asChild>
-                  <Button variant='outline' size='icon'>
+                  <Button
+                    variant='ghost'
+                    size='icon'
+                    className='size-auto h-full min-h-11 w-11 rounded-none border-0 border-l border-border bg-transparent shadow-none hover:bg-foreground/6'
+                    aria-label='Table options'
+                  >
                     <LucideMoreVertical />
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent>
+                <DropdownMenuContent align='end'>
                   <DropdownMenuItem
                     onClick={() => {
                       openUpdateTableDialog({
@@ -130,7 +158,16 @@ function TableEditorDialog() {
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
-            </div>
+              <Button
+                variant='ghost'
+                size='icon'
+                className='size-auto h-full min-h-11 w-11 rounded-none border-0 border-l border-border bg-transparent shadow-none hover:bg-foreground/6'
+                aria-label='Close table editor'
+                onClick={closeEditor}
+              >
+                <LucideX />
+              </Button>
+            </header>
             {projectId && tableId && (
               <div>
                 <TableContextProvider projectId={projectId} tableId={tableId}>
@@ -154,6 +191,15 @@ function openTableEditorDialog({
   tableId: string | undefined;
 }) {
   if (!tableId || !projectId) return;
+  if (
+    openDesktopAuxWindow({
+      kind: 'table-editor',
+      title: 'Table',
+      hash: `/dashboard/${projectId}/edit-table?tableId=${tableId}`,
+    })
+  ) {
+    return;
+  }
   window.dispatchEvent(
     new CustomEvent(OPEN_TABLE_EDITOR_DIALOG, {
       detail: { tableId, projectId },

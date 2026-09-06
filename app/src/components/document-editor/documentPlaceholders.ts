@@ -1,3 +1,5 @@
+import { fileFieldDisplayName } from '@/lib/fileField';
+
 /**
  * Injects record values into TipTap document JSON: replaces mention nodes
  * (#FieldName) with text nodes containing record[fieldName].
@@ -12,8 +14,10 @@ export function injectRecordIntoDocumentContent(
       const attrs = (node.attrs as Record<string, unknown>) ?? {};
       const fieldName = (attrs.id as string) ?? (attrs.label as string) ?? '';
       const value = record[fieldName];
-      const text =
-        value !== null && value !== undefined && value !== ''
+      const fileName = fileFieldDisplayName(value);
+      const text = fileName
+        ? fileName
+        : value !== null && value !== undefined && value !== ''
           ? String(value)
           : '';
       return { type: 'text', text };

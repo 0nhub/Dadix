@@ -1,14 +1,33 @@
 :root {
-  font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
   font-size: 14px;
   line-height: 1.5;
-  color: #a9b1d6;
-  background: #1a1b26;
+  color: var(--fg);
+  background: var(--bg);
   -webkit-font-smoothing: antialiased;
+
+  --bg: hsl(0, 0%, 100%);
+  --fg: hsl(0, 0%, 12%);
+  --muted: hsl(0, 0%, 53%);
+  --muted-bg: hsl(0, 0%, 96%);
+  --sidebar: hsl(0, 0%, 98%);
+  --card: hsl(0, 0%, 100%);
+  --border: hsl(0, 0%, 91%);
+  --primary: hsl(0, 0%, 16%);
+  --primary-fg: hsl(0, 0%, 98%);
+  --danger: hsl(15, 85%, 52%);
+  --warn: hsl(38, 75%, 38%);
+  --warn-bg: hsl(40, 80%, 96%);
+  --ring: hsl(0, 0%, 68%);
 }
 
 * {
   box-sizing: border-box;
+}
+
+button {
+  appearance: none;
+  -webkit-appearance: none;
 }
 
 body {
@@ -21,8 +40,8 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #1a1b26;
-  color: #565f89;
+  background: var(--bg);
+  color: var(--muted);
 }
 
 .app-loading p {

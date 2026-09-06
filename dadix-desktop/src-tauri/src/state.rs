@@ -1,17 +1,20 @@
-//! App state: currently open .dadix file.
+//! Desktop session: the open [`dadix_core::ProjectHandle`] plus a launch-queued path.
 
-use crate::db::DadixDb;
+use dadix_core::ProjectHandle;
 use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 pub struct AppState {
-    pub db: Mutex<Option<(DadixDb, PathBuf)>>,
+    pub session: Mutex<Option<Arc<ProjectHandle>>>,
+    /// Path from argv or macOS `RunEvent::Opened`, consumed via `dadix_take_pending_open_path`.
+    pub pending_open: Mutex<Option<PathBuf>>,
 }
 
 impl AppState {
-    pub fn new() -> Self {
+    pub fn new(pending_open: Option<PathBuf>) -> Self {
         Self {
-            db: Mutex::new(None),
+            session: Mutex::new(None),
+            pending_open: Mutex::new(pending_open),
         }
     }
 }

@@ -37,6 +37,8 @@ import { DadixViewIcon } from '@/components/dadix-view-icon/DadixViewIcon';
 
 import { dadixEvents } from '@/constants/events';
 import { duplicateView, patchView } from '@/lib/view';
+import { useLanguage } from '@/context/LanguageContext';
+import { localizeSystemName } from '@/lib/i18n';
 import {
   CLOSE_EDIT_VIEW_PANEL_EVENT,
   OPEN_EDIT_VIEW_PANEL_EVENT,
@@ -158,6 +160,7 @@ function ViewsListItem({
   isSelected: boolean;
 }) {
   const [isDropdownMenuOpen, setIsDropdownMenuOpen] = useState<boolean>(false);
+  const { locale } = useLanguage();
 
   const {
     transform,
@@ -199,7 +202,7 @@ function ViewsListItem({
           </div>
           <DadixViewIcon name={item.icon as string} className='size-5' />
           <span className='text-sm shrink grow ml-3 overflow-hidden'>
-            {item.name as string}
+            {localizeSystemName(locale, item.name as string)}
           </span>
           <DropdownMenu
             modal={false}

@@ -38,12 +38,15 @@ import { availableDadixViewIcons } from '@/components/dadix-view-icon/DadixViewI
 
 import type { IDadixView } from '@/types';
 import { useTableViewsContext } from '@/context/TableViewsContext';
+import { useLanguage } from '@/context/LanguageContext';
+import { localizeSystemName } from '@/lib/i18n';
 
 const OPEN_EDIT_VIEW_PANEL_EVENT = 'dadix--open-edit-view-panel-event';
 const CLOSE_EDIT_VIEW_PANEL_EVENT = 'dadix--close-edit-view-panel-event';
 
 function EditViewPanel() {
   const currentTableViewsCtx = useTableViewsContext();
+  const { locale } = useLanguage();
   const [viewId, setViewId] = useState<number | undefined>(undefined);
   const [isOpen, setIsOpen] = useState<boolean>(false);
   const [viewName, setViewName] = useState<string | undefined>(undefined);
@@ -57,10 +60,10 @@ function EditViewPanel() {
   const closeTimeout = useRef<NodeJS.Timeout>(undefined);
 
   const view = useMemo(() => {
-    return currentTableViewsCtx.views.filter(
-      (view) => `${view.id}` === `${viewId}`
-    )[0];
-  }, [viewId]);
+    return currentTableViewsCtx.views.find(
+      (item) => `${item.id}` === `${viewId}`
+    );
+  }, [viewId, currentTableViewsCtx.views]);
 
   useEffect(() => {
     window.addEventListener(OPEN_EDIT_VIEW_PANEL_EVENT, handleOpenPanel);
@@ -87,14 +90,12 @@ function EditViewPanel() {
 
   useEffect(() => {
     if (!view || !isOpen) return;
-    if (`${viewCopyRef.current?.name}` !== `${view.name}`) {
-      setViewName(view.name);
-      setlastViewIcon(view.icon);
-    }
+    setViewName(localizeSystemName(locale, view.name));
+    setlastViewIcon(view.icon);
     viewCopyRef.current = {
       ...view,
     };
-  }, [isOpen, view]);
+  }, [isOpen, view, locale]);
 
   const updateViewName = () => {
     if (!viewCopyRef.current) return;
@@ -109,16 +110,9 @@ function EditViewPanel() {
           name: view.name,
         },
         silent: true,
-      })
-        .then((res) => {
-          if (res.status !== 200) {
-            throw new Error('Error saving project title');
-          }
-          return res;
-        })
-        .catch((err) => {
-          console.error(err);
-        });
+      }).catch((err) => {
+        console.error(err);
+      });
     }, 1000);
     window.dispatchEvent(
       new CustomEvent(dadixEvents.viewEvents.onPatch, {
@@ -141,16 +135,9 @@ function EditViewPanel() {
       data: {
         icon: view.icon,
       },
-    })
-      .then((res) => {
-        if (res.status !== 200) {
-          throw new Error('Error saving project icon');
-        }
-        return res;
-      })
-      .catch((err) => {
-        console.error(err);
-      });
+    }).catch((err) => {
+      console.error(err);
+    });
   };
 
   const deleteView = () => {

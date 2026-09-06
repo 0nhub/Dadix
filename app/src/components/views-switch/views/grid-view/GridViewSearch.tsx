@@ -87,6 +87,9 @@ function GridViewSearch({
     case 'TEXT':
       SearchUI = <TextSearch {...searchUIAttributes} />;
       break;
+    case 'FILE':
+      SearchUI = <></>;
+      break;
     default:
       SearchUI = <TextSearch {...searchUIAttributes} />;
   }

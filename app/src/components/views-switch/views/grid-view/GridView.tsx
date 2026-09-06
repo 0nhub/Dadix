@@ -39,6 +39,7 @@ import { GridViewFindBar, type FindMatch } from './GridViewFindBar';
 import { closeViewSearch } from '../../OpenViewSearch';
 import { useFindInViewOptional } from '@/context/FindInViewContext';
 import { sortRecordsByRule, viewFieldToTableField } from '@/lib/utils';
+import { fileFieldDisplayName } from '@/lib/fileField';
 import { FormulaEval } from '@/components/formula-eval/FormulaEval';
 import { useRequireRole } from '@/hooks/useRequireRole';
 import { useEventHandler } from '@/hooks/useEventHandler';
@@ -121,12 +122,14 @@ function GridView({
 }: GridViewProps) {
   return (
     <GridViewContextProvider
+      key={`${tableId}-${viewId}`}
       tableId={tableId}
       viewId={viewId}
       globalFilter={globalFilter}
     >
       <GridViewRowsContextProvider>
         <GridViewContent
+          tableId={tableId}
           viewId={viewId}
           onOpenRecord={onOpenRecord}
           isSearchActive={isSearchActive}
@@ -138,6 +141,7 @@ function GridView({
 }
 
 interface GridViewContentProps {
+  tableId: string;
   viewId: string;
   onOpenRecord?: (_record: Record<string, unknown>) => void;
   isSearchActive: boolean;
@@ -145,6 +149,7 @@ interface GridViewContentProps {
 }
 
 function GridViewContent({
+  tableId,
   viewId,
   onOpenRecord,
   isSearchActive,
@@ -232,7 +237,7 @@ function GridViewContent({
     () => ({
       id: 'select',
       header: ({ table }) => (
-        <div className='flex w-full items-center justify-center py-1'>
+        <div className='flex h-full w-full items-center justify-center'>
           {!canEditRecords ||
           table.getIsSomeRowsSelected() ||
           table.getIsAllRowsSelected() ? (
@@ -260,7 +265,7 @@ function GridViewContent({
       cell: ({ row }) => (
         <div
           onClick={(e) => e.stopPropagation()}
-          className='relative w-full h-[40px] inline-flex flex-row justify-center items-center group/rowcheckboxgroup overflow-hidden'
+          className='relative h-full w-full inline-flex flex-row justify-center items-center group/rowcheckboxgroup overflow-hidden'
         >
           <span
             className='absolute inline-block w-full text-sm text-center text-muted-foreground group-hover/rowcheckboxgroup:hidden'
@@ -308,21 +313,24 @@ function GridViewContent({
   const [customRecordOrder, setCustomRecordOrder] = useState<string[]>(() =>
     tableIdForOrder && viewIdForOrder ? getStoredRecordOrder(tableIdForOrder, viewIdForOrder) : []
   );
-  const [oneTimeSort, setOneTimeSort] = useState<{ fieldId: number; direction: 'ASC' | 'DESC' } | null>(null);
   useEffect(() => {
     if (!tableIdForOrder || !viewIdForOrder) return;
+    if (hasSortRule) {
+      setCustomRecordOrder([]);
+      setStoredRecordOrder(tableIdForOrder, viewIdForOrder, []);
+      return;
+    }
     setCustomRecordOrder(getStoredRecordOrder(tableIdForOrder, viewIdForOrder));
-  }, [tableIdForOrder, viewIdForOrder]);
+  }, [tableIdForOrder, viewIdForOrder, hasSortRule]);
 
   const displayData = useMemo(() => {
     const raw = gridViewRowsCtx.data || [];
-    if (oneTimeSort) {
-      return sortRecordsByRule([...raw], [oneTimeSort], gridViewCtx.view?.fields ?? []);
+    if (hasSortRule) {
+      return sortRecordsByRule([...raw], gridViewCtx.sort, gridViewCtx.view?.fields ?? []);
     }
     if (customRecordOrder.length > 0) return applyCustomOrder(raw, customRecordOrder);
-    if (hasSortRule) return raw;
-    return applyCustomOrder(raw, customRecordOrder);
-  }, [gridViewRowsCtx.data, hasSortRule, customRecordOrder, oneTimeSort, gridViewCtx.view?.fields]);
+    return raw;
+  }, [gridViewRowsCtx.data, hasSortRule, customRecordOrder, gridViewCtx.sort, gridViewCtx.view?.fields]);
 
   const handleRowReorder = useCallback(
     (fromIndex: number, toIndex: number) => {
@@ -339,9 +347,63 @@ function GridViewContent({
     [displayData, tableIdForOrder, viewIdForOrder]
   );
 
+  const handleColumnReorder = useCallback(
+    (fromHeaderId: string, toHeaderId: string) => {
+      const fields = gridViewCtx.view?.fields;
+      const viewId = gridViewCtx.id;
+      const tableId = gridViewCtx.view?.tableId;
+      if (!fields || !viewId || tableId == null) return;
+      const fromField = fields.find((field) => `${field.id}` === fromHeaderId);
+      const toField = fields.find((field) => `${field.id}` === toHeaderId);
+      if (!fromField || !toField) return;
+      const fromOrder = fromField.order ?? fromField.fieldOrder ?? 0;
+      const toOrder = toField.order ?? toField.fieldOrder ?? 0;
+      if (fromOrder === toOrder) return;
+      const direction = Math.sign(fromOrder - toOrder);
+      const minOrder = Math.min(fromOrder, toOrder);
+      const maxOrder = Math.max(fromOrder, toOrder);
+      const nextFields = fields.map((field) => {
+        const order = field.order ?? field.fieldOrder ?? 0;
+        if (`${field.id}` === `${fromField.id}`) {
+          return { ...field, order: toOrder, fieldOrder: toOrder };
+        }
+        if (order < minOrder || order > maxOrder) return field;
+        const shifted = order + direction;
+        return { ...field, order: shifted, fieldOrder: shifted };
+      });
+      window.dispatchEvent(
+        new CustomEvent(dadixEvents.gridViewEvents.onPatchField, {
+          detail: {
+            viewId,
+            id: fromField.id,
+            data: { order: toOrder, fieldOrder: toOrder },
+          },
+        })
+      );
+      nextFields.forEach((field) => {
+        const prev = fields.find((item) => `${item.id}` === `${field.id}`);
+        const prevOrder = prev?.order ?? prev?.fieldOrder ?? 0;
+        if (prevOrder === field.order) return;
+        void patchGridViewColumn({
+          tableId: `${tableId}`,
+          gridViewId: viewId,
+          tableColumnId: field.fieldId,
+          id: field.id,
+          data: { order: field.order, fieldOrder: field.order },
+          silent: true,
+        });
+      });
+    },
+    [gridViewCtx.view, gridViewCtx.id]
+  );
+
   const onOneTimeSort = useCallback((fieldId: number, direction: 'ASC' | 'DESC') => {
-    setOneTimeSort({ fieldId, direction });
-  }, []);
+    gridViewCtx.methods.setSortingRule([{ fieldId, direction }]);
+    setCustomRecordOrder([]);
+    if (tableIdForOrder && viewIdForOrder) {
+      setStoredRecordOrder(tableIdForOrder, viewIdForOrder, []);
+    }
+  }, [gridViewCtx.methods, tableIdForOrder, viewIdForOrder]);
 
   const tableColumnsDef: ColumnDef<Record<string, unknown>>[] =
     useTableColumnsRenderer({
@@ -352,10 +414,18 @@ function GridViewContent({
       isSearchActive,
       searchFilters: gridViewCtx.searchFilters,
       setSearchFilters: gridViewCtx.methods.setSearchFilters,
-      gridViewColumns: gridViewCtx.view?.fields || [],
+      gridViewColumns: gridViewCtx.view?.fields?.length
+        ? gridViewCtx.view.fields
+        : undefined,
       sortingRule: gridViewCtx?.sort,
       setSortingRule: gridViewCtx.methods.setSortingRule,
       onOneTimeSort,
+      onOpenSortingRule: () => {
+        openViewSortingDialogRequest({
+          viewId: gridViewCtx.id,
+          tableId: gridViewCtx.view?.tableId,
+        });
+      },
       canEditTables,
       canEditRecords,
       handleRecordChange,
@@ -379,6 +449,7 @@ function GridViewContent({
     },
     getRowId: (row) => (row.id as number | string).toString(),
     enableRowSelection: true,
+    enableColumnResizing: canEditTables,
     onRowSelectionChange: setRowSelection,
     //onSortingChange: setSorting,
     //onColumnFiltersChange: setColumnFilters,
@@ -399,7 +470,13 @@ function GridViewContent({
     rows.forEach((row) => {
       columns.forEach((col) => {
         const val = row.getValue(col.id);
-        const str = val != null ? String(val) : '';
+        const meta = (col.columnDef.meta ?? {}) as { type?: string };
+        const str =
+          meta.type === 'FILE'
+            ? fileFieldDisplayName(val)
+            : val != null
+              ? String(val)
+              : '';
         if (str.toLowerCase().includes(q)) list.push({ rowIndex: row.index, columnId: col.id });
       });
     });
@@ -460,9 +537,7 @@ function GridViewContent({
     gridViewFiltersRef.current = gridViewCtx.filters || [];
   }, [gridViewCtx.view, gridViewCtx.filters, gridViewCtx.view?.fields]);
 
-  useEffect(() => {
-    tableIdRef.current = gridViewCtx.view?.tableId;
-  }, [gridViewCtx.view]);
+  tableIdRef.current = gridViewCtx.view?.tableId ?? currentTableCtx.id;
 
   // handle request open filter dialog event
   useEventHandler(
@@ -539,16 +614,13 @@ function GridViewContent({
       const details = (evnt as CustomEvent).detail || {};
       if (
         !details ||
-        details.tableId !== tableIdRef.current ||
+        String(details.tableId) !== String(tableIdRef.current) ||
         !details.record
       ) {
         return;
       }
-      if (activeRecordId !== details.record.id) {
-        setActiveRecordId(details.record.id);
-      }
-    },
-    [activeRecordId]
+      setActiveRecordId(details.record.id);
+    }
   );
 
   // handle close record editor event
@@ -557,19 +629,10 @@ function GridViewContent({
     (evnt: Event) => {
       if (!tableIdRef.current) return;
       const details = (evnt as CustomEvent).detail || {};
-      if (
-        !details ||
-        details.tableId !== tableIdRef.current ||
-        !details.recordId
-      ) {
-        return;
-      }
-      if (activeRecordId !== details.recordId) {
-        return;
-      }
+      if (!details?.tableId) return;
+      if (String(details.tableId) !== String(tableIdRef.current)) return;
       setActiveRecordId(undefined);
-    },
-    [activeRecordId]
+    }
   );
 
   useEffect(() => {
@@ -614,9 +677,13 @@ function GridViewContent({
     if (!gridViewCtx.view || !gridViewCtx.view.tableId) return;
 
     setActiveRecordId(record.id as number);
-    const tableFields =
-      currentTableCtx?.table?.fields ??
-      (gridViewCtx.view.fields || []).map((f) => viewFieldToTableField(f));
+    const contextTable = currentTableCtx?.table;
+    const contextMatchesOpenedTable =
+      contextTable?.fields?.length &&
+      String(contextTable.id) === String(gridViewCtx.view.tableId);
+    const tableFields = contextMatchesOpenedTable
+      ? contextTable.fields
+      : (gridViewCtx.view.fields || []).map((f) => viewFieldToTableField(f));
     openTableRecord({
       tableId: gridViewCtx.view.tableId,
       tableFields: [...tableFields],
@@ -624,7 +691,7 @@ function GridViewContent({
     });
   }
 
-  if (!gridViewCtx.initialized) return null;
+  if (!gridViewCtx.initialized && !currentTableCtx.table) return null;
 
   const currentIndex = findCtx ? findCtx.currentMatchIndex : findCurrentIndex;
   const findHighlight = findMatches[currentIndex] ?? null;
@@ -658,6 +725,8 @@ function GridViewContent({
         viewId={gridViewCtx.id}
         enableRowReorder
         onRowReorder={handleRowReorder}
+        enableColumnReorder={canEditTables}
+        onColumnReorder={canEditTables ? handleColumnReorder : undefined}
         className='group/no-left-radius w-full max-w-full flex flex-1 min-h-0 h-full flex-col justify-start gap-6'
         openRecord={onOpenRecord || openRecordSheet}
         activeRecordId={activeRecordId as string}
@@ -665,26 +734,9 @@ function GridViewContent({
         onDeleteRecord={canEditRecords ? handleDelete : undefined}
         findScrollToRowIndex={findScrollToRowIndex}
         findHighlight={findHighlight}
-        onColumnResizeChange={({
-        size,
-        tableFieldId,
-        gridViewFieldId,
-      }: {
-        size: number;
-        tableFieldId: number;
-        gridViewFieldId?: number;
-      }) => {
-        if (!gridViewCtx.id || !gridViewFieldId) return;
-        window.dispatchEvent(
-          new CustomEvent(dadixEvents.gridViewEvents.onPatchField, {
-            detail: {
-              viewId: gridViewCtx.id,
-              id: gridViewFieldId,
-              data: { size },
-            },
-          })
-        );
-      }}
+        onColumnResizeChange={() => {
+          /* live width is applied in TableView; persist only when the drag ends */
+        }}
       onColumnResizeEnd={({
         size,
         tableFieldId,
@@ -694,20 +746,62 @@ function GridViewContent({
         tableFieldId: number;
         gridViewFieldId?: number;
       }) => {
-        if (!gridViewCtx.id || !gridViewFieldId) return;
-        patchGridViewColumn({
-          tableId: `${gridViewCtx.view?.tableId}`,
-          gridViewId: gridViewCtx.id,
-          tableColumnId: tableFieldId,
-          id: gridViewFieldId,
-          data: {
+        if (gridViewFieldId != null && gridViewCtx.id) {
+          window.dispatchEvent(
+            new CustomEvent(dadixEvents.gridViewEvents.onPatchField, {
+              detail: {
+                viewId: gridViewCtx.id,
+                id: gridViewFieldId,
+                data: { size },
+              },
+            })
+          );
+          persistColumnSize({
             size,
-          },
-        });
+            tableFieldId,
+            gridViewFieldId,
+            tableId: `${gridViewCtx.view?.tableId || tableId}`,
+            viewId: gridViewCtx.id,
+          });
+        } else if (tableFieldId) {
+          window.dispatchEvent(
+            new CustomEvent(dadixEvents.tableEvents.onPatchField, {
+              detail: {
+                tableId: `${gridViewCtx.view?.tableId || tableId}`,
+                fieldId: tableFieldId,
+                data: { size },
+              },
+            })
+          );
+        }
       }}
       />
     </div>
   );
+}
+
+function persistColumnSize({
+  size,
+  tableFieldId,
+  gridViewFieldId,
+  tableId,
+  viewId,
+}: {
+  size: number;
+  tableFieldId: number;
+  gridViewFieldId: number;
+  tableId: string;
+  viewId: number;
+}) {
+  if (!tableId || tableId === 'undefined' || !viewId) return;
+  patchGridViewColumn({
+    tableId,
+    gridViewId: viewId,
+    tableColumnId: tableFieldId,
+    id: gridViewFieldId,
+    data: { size },
+    silent: true,
+  });
 }
 
 function openGridViewFiltersDialog({

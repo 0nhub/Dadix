@@ -459,11 +459,9 @@ function RelationContent({
       ) {
         return;
       }
-      if (activeRecordId !== details.record.id) {
-        setActiveRecordId(details.record.id);
-      }
+      setActiveRecordId(details.record.id);
     },
-    [activeRecordId, tableId, relation, recordId]
+    [tableId, relation, recordId]
   );
   // handle close record editor event
   useEventHandler(
@@ -484,19 +482,11 @@ function RelationContent({
       });
       if (!encodedRelationData) return;
       const details = (evnt as CustomEvent).detail || {};
-      if (
-        !details ||
-        details.tableId !== encodedRelationData ||
-        !details.recordId
-      ) {
-        return;
-      }
-      if (activeRecordId !== details.recordId) {
-        return;
-      }
+      if (!details?.tableId) return;
+      if (String(details.tableId) !== String(encodedRelationData)) return;
       setActiveRecordId(undefined);
     },
-    [activeRecordId, tableId, relation, recordId]
+    [tableId, relation, recordId]
   );
 
   function handleSelectRecord(record: Record<string, unknown>) {

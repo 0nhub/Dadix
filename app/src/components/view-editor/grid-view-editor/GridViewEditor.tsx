@@ -57,6 +57,7 @@ import {
   GRIDVIEW_HIDE_ALL_FIELDS,
 } from '@/components/view-editor/ViewEditor';
 import { useTableContext } from '@/context/TableContext';
+import { useLanguage } from '@/context/LanguageContext';
 
 export function GridViewEditor({
   view,
@@ -68,6 +69,7 @@ export function GridViewEditor({
   tableId?: string;
 }) {
   const currentTableCtx = useTableContext();
+  const { t } = useLanguage();
   const sensors = useSensors(
     useSensor(MouseSensor, {}),
     useSensor(TouchSensor, {}),
@@ -676,6 +678,7 @@ export function GridViewEditor({
                   key={field.id}
                   field={field}
                   updateField={updateViewField}
+                  tableContext={currentTableCtx}
                 />
               );
             })}
@@ -863,6 +866,7 @@ function ViewButtonRow({
 function GridViewField({
   field,
   updateField,
+  tableContext,
 }: {
   field: IDadixGridViewField;
   updateField: (opts: {
@@ -870,6 +874,7 @@ function GridViewField({
     data: Partial<IDadixGridViewField>;
     fieldRef?: IDadixGridViewField;
   }) => void;
+  tableContext: ReturnType<typeof useTableContext>;
 }) {
   const {
     transform,
@@ -902,15 +907,30 @@ function GridViewField({
       >
         <LucideGripVertical className='size-4.5' />
       </span>
-      <span>
-        <TableFieldTypeIcon name={field?.type || ''} className='size-4.5' />
-      </span>
-      <span
-        title={field.fieldName}
-        className='shrink grow overflow-hidden text-ellipsis whitespace-nowrap text-sm'
+      <button
+        type='button'
+        className='flex min-w-0 flex-1 items-center gap-3 text-left hover:opacity-80'
+        onPointerDown={(event) => event.stopPropagation()}
+        onClick={() => {
+          const tableFieldId = Number(field.fieldId ?? field.id);
+          if (!tableFieldId || tableFieldId < 0 || !tableContext?.table) return;
+          openEditTableFieldPanel({
+            fieldId: tableFieldId,
+            tableContext,
+            allowNavigation: true,
+          });
+        }}
       >
-        {field.fieldName}
-      </span>
+        <span>
+          <TableFieldTypeIcon name={field?.type || ''} className='size-4.5' />
+        </span>
+        <span
+          title={field.fieldName}
+          className='min-w-0 shrink grow overflow-hidden text-ellipsis whitespace-nowrap text-sm'
+        >
+          {field.fieldName}
+        </span>
+      </button>
       {field.type !== availableDadixFieldsDataTypes.RELATION && (
         <div
           className='shrink-0 grow-0 ml-auto mr-2'
@@ -983,7 +1003,7 @@ function AddNewFieldForm({
           setNewFieldName('');
           onRefetch();
         })
-        .catch((err) => toast.error(err?.response?.data?.message ?? err?.message ?? 'Button konnte nicht hinzugefügt werden. Bitte erneut anmelden.'))
+        .catch((err) => toast.error(err?.response?.data?.message ?? err?.message ?? t('table.buttonAddFailed')))
         .finally(() => setIsSaving(false));
       return;
     }
@@ -1020,15 +1040,19 @@ function AddNewFieldForm({
               detail: { tableId: tableIdForContext },
             })
           );
-          await patchGridViewColumn({
-            id: -(res.data.id as number),
-            tableColumnId: res.data.id as number,
-            tableId: `${tableId}`,
-            gridViewId,
-            data: {
-              isVisible: true,
-            },
-          });
+          try {
+            await patchGridViewColumn({
+              id: -(res.data.id as number),
+              tableColumnId: res.data.id as number,
+              tableId: `${tableId}`,
+              gridViewId,
+              data: {
+                isVisible: true,
+              },
+            });
+          } catch (viewErr) {
+            console.error('[dadix] VIEW_COLUMN_UPDATE_FAILED after field create', viewErr);
+          }
           setNewFieldName('');
           setNewFieldType('1');
           setIsSaving(false);
@@ -1040,12 +1064,14 @@ function AddNewFieldForm({
         })
         .catch((err) => {
           setIsSaving(false);
-          console.error('Error adding field:', err);
-          toast.error('Failed to add field');
+          const msg = err instanceof Error ? err.message : String(err);
+          console.error('FIELD_CREATE_FAILED', err);
+          toast.error(msg || 'Failed to add field');
         });
     } catch (error) {
-      console.error('Error adding field:', error);
-      toast.error('Failed to add field');
+      const msg = error instanceof Error ? error.message : String(error);
+      console.error('FIELD_CREATE_FAILED', error);
+      toast.error(msg || 'Failed to add field');
     }
   };
 

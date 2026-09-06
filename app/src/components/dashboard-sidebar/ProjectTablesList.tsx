@@ -78,6 +78,7 @@ import tableService from '@/lib/table';
 import { cn } from '@/lib/utils';
 import { UserLocalStorage } from '@/lib/userLocalStorage';
 import { openUpdateTableDialog } from '../table-editor/UpdateTableDialog';
+import { useLanguage } from '@/context/LanguageContext';
 import {
   DEFAULT_GROUP_ID,
   type SidebarGroup as SidebarGroupType,
@@ -93,6 +94,9 @@ import { useTableContext } from '@/context/TableContext';
 import { openAPIConfigDialog } from '@/components/api-config-dialog/APIConfigDialog';
 import { openApiKeysDialog } from '@/components/table-editor/ApiKeysDialog';
 import { openTableWebhookDialog } from '@/components/table-webhook-dialog/TableWebhookDialog';
+import { openViewsEditorDialog } from '@/components/views-editor/ViewsEditor';
+import { projectTableHref } from '@/lib/projectHref';
+import { isDadixDesktopShell, openExternalUrl } from '@/lib/desktopShell';
 
 const DROP_GROUP_PREFIX = 'drop-group-';
 
@@ -195,6 +199,10 @@ function GroupHeaderRow({
     listeners: Record<string, unknown>;
   };
 }) {
+  const canDeleteGroup = group.id !== DEFAULT_GROUP_ID;
+  const stopRowPointer = (event: React.SyntheticEvent) => {
+    event.stopPropagation();
+  };
   return (
     <div
       role='button'
@@ -210,46 +218,66 @@ function GroupHeaderRow({
       {...(groupDragHandleProps?.attributes as object)}
       {...(groupDragHandleProps?.listeners as object)}
     >
-      <SidebarGroupLabel className='text-muted-foreground text-xs font-semibold min-w-0 flex-1 !h-6 !min-h-6'>
+      <SidebarGroupLabel
+        data-sidebar-fit-label={group.name}
+        data-group-hidden={isHidden ? 'true' : 'false'}
+        className={cn(
+          'text-muted-foreground text-xs font-semibold min-w-0 flex-1 !h-6 !min-h-6',
+          isHidden && 'opacity-60'
+        )}
+      >
         {group.name}
       </SidebarGroupLabel>
       {canEditTables && (
-        <DropdownMenu>
+        <DropdownMenu modal={false}>
           <DropdownMenuTrigger asChild>
             <Button
               variant='ghost'
               size='icon'
               className='size-5 shrink-0 md:opacity-0 md:group-hover/label:opacity-100 transition-opacity'
-              onClick={(e) => e.stopPropagation()}
+              onPointerDown={stopRowPointer}
+              onClick={stopRowPointer}
               aria-label='Group options'
+              data-group-name={group.name}
             >
               <LucideMoreVertical className='size-3' />
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align='end'>
-            <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onNewTable(); }}>
+          <DropdownMenuContent
+            align='end'
+            onPointerDown={stopRowPointer}
+            onClick={stopRowPointer}
+          >
+            <DropdownMenuItem onSelect={() => onNewTable()}>
               <Table2 className='size-4' />
               New Table
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onRename(); }}>
+            <DropdownMenuItem onSelect={() => onRename()}>
               <LucidePencil className='size-4' />
               Rename
             </DropdownMenuItem>
             {isHidden ? (
-              <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onUnhide(); }}>
+              <DropdownMenuItem onSelect={() => onUnhide()}>
                 <Eye className='size-4' />
                 Unhide
               </DropdownMenuItem>
             ) : (
-              <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onHide(); }}>
+              <DropdownMenuItem onSelect={() => onHide()}>
                 <EyeOff className='size-4' />
                 Hide
               </DropdownMenuItem>
             )}
-            <DropdownMenuItem variant='destructive' onClick={(e) => { e.stopPropagation(); onDelete(); }}>
-              <Trash2 className='size-4' />
-              Delete group
-            </DropdownMenuItem>
+            {canDeleteGroup && (
+              <DropdownMenuItem
+                variant='destructive'
+                onSelect={() => {
+                  window.setTimeout(onDelete, 0);
+                }}
+              >
+                <Trash2 className='size-4' />
+                Delete group
+              </DropdownMenuItem>
+            )}
           </DropdownMenuContent>
         </DropdownMenu>
       )}
@@ -358,19 +386,26 @@ export function ProjectTablesList({
         tableId: `${table.id}`,
       });
       toast.success('Table removed');
-      if (currentTableCtx.id !== table.id) {
+      const remaining = currentProjectCtx.tables.filter(
+        (item) => `${item.id}` !== `${table.id}`
+      );
+      if (`${currentTableCtx.id}` !== `${table.id}`) {
         return;
       }
-      if (currentProjectCtx.tables && currentProjectCtx.tables.length > 0) {
+      if (remaining[0]) {
+        const viewQuery = remaining[0].defaultViewId
+          ? `&viewId=${remaining[0].defaultViewId}`
+          : '';
         router.push(
-          `/dashboard/${currentProjectCtx.id}?tableId=${currentProjectCtx.tables[0].id}`
+          `/dashboard/${currentProjectCtx.id}?tableId=${remaining[0].id}${viewQuery}`
         );
       } else {
         router.push(`/dashboard/${currentProjectCtx.id}`);
       }
     } catch (err) {
-      console.error('Failed to remove table', err);
-      toast.error('Failed to remove table');
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error('TABLE_DELETE_FAILED', err);
+      toast.error(msg || 'Failed to remove table');
     } finally {
       closeDelete();
     }
@@ -411,8 +446,14 @@ export function ProjectTablesList({
       showHiddenGroups && sidebarState
         ? [...groups].sort((a, b) => a.order - b.order).filter((g) => g.hidden)
         : [];
-    const getGroupId = (t: Table) =>
-      tableToGroup[String(t.id)] ?? DEFAULT_GROUP_ID;
+    const knownGroupIds = new Set(groups.map((g) => g.id));
+    const getGroupId = (t: Table) => {
+      const assigned = tableToGroup[String(t.id)];
+      if (assigned && knownGroupIds.has(assigned)) return assigned;
+      return knownGroupIds.has(DEFAULT_GROUP_ID)
+        ? DEFAULT_GROUP_ID
+        : (sortedVisible[0]?.id ?? DEFAULT_GROUP_ID);
+    };
     const byGroup = new Map<string, Table[]>();
     for (const t of filteredTables) {
       const gid = getGroupId(t);
@@ -429,6 +470,30 @@ export function ProjectTablesList({
     for (const g of sortedHidden) {
       const tables = byGroup.get(g.id) ?? [];
       hiddenGroupsWithTables.push({ ...g, tables });
+    }
+    const assigned = new Set(
+      [...groupsWithTables, ...hiddenGroupsWithTables].flatMap((g) =>
+        g.tables.map((t) => String(t.id))
+      )
+    );
+    const hiddenGroupIds = new Set(
+      groups.filter((g) => g.hidden).map((g) => g.id)
+    );
+    const orphans = filteredTables.filter((t) => {
+      if (assigned.has(String(t.id))) return false;
+      return !hiddenGroupIds.has(getGroupId(t));
+    });
+    if (orphans.length > 0) {
+      if (groupsWithTables.length === 0) {
+        groupsWithTables.push({
+          id: DEFAULT_GROUP_ID,
+          name: 'Tables',
+          order: 0,
+          tables: orphans,
+        });
+      } else {
+        groupsWithTables[0].tables.push(...orphans);
+      }
     }
     return { groupsWithTables, hiddenGroupsWithTables };
   })();
@@ -883,39 +948,42 @@ export function ProjectTablesList({
           }}
         />
       )}
-      {deleteGroupConfirm && (
-        <Dialog
-          open={!!deleteGroupConfirm}
-          onOpenChange={(open) => !open && setDeleteGroupConfirm(null)}
-        >
-          <DialogContent className='sm:max-w-md'>
-            <DialogHeader>
-              <DialogTitle>Delete group</DialogTitle>
-            </DialogHeader>
-            <p className='text-sm text-muted-foreground'>
-              Delete &quot;{deleteGroupConfirm.name}&quot;? Tables in this group
-              will be moved to Tables.
-            </p>
-            <DialogFooter className='gap-4'>
-              <Button
-                variant='outline'
-                onClick={() => setDeleteGroupConfirm(null)}
-              >
-                Cancel
-              </Button>
-              <Button
-                variant='destructive'
-                onClick={() => {
-                  sidebarState?.removeGroup(deleteGroupConfirm.id);
-                  setDeleteGroupConfirm(null);
-                }}
-              >
-                Delete group
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-      )}
+      <Dialog
+        open={!!deleteGroupConfirm}
+        onOpenChange={(open) => !open && setDeleteGroupConfirm(null)}
+      >
+        <DialogContent className='sm:max-w-md'>
+          <DialogHeader>
+            <DialogTitle>Delete group</DialogTitle>
+          </DialogHeader>
+          <p className='text-sm text-muted-foreground'>
+            Delete &quot;{deleteGroupConfirm?.name}&quot;? Tables in this group
+            will be moved to Tables.
+          </p>
+          <DialogFooter className='gap-4'>
+            <Button
+              type='button'
+              variant='outline'
+              onClick={() => setDeleteGroupConfirm(null)}
+            >
+              Cancel
+            </Button>
+            <Button
+              type='button'
+              variant='destructive'
+              data-confirm-delete-group=''
+              onClick={() => {
+                if (!deleteGroupConfirm) return;
+                sidebarState?.removeGroup(deleteGroupConfirm.id);
+                toast.success('Group deleted');
+                setDeleteGroupConfirm(null);
+              }}
+            >
+              Delete group
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }
@@ -931,7 +999,6 @@ function DraggableLinkItem({
   onRemove: () => void;
   justDraggedRef: React.MutableRefObject<boolean>;
 }) {
-  const router = useRouter();
   const isMobile = useIsMobile();
   const {
     attributes,
@@ -949,34 +1016,28 @@ function DraggableLinkItem({
         transform: CSS.Transform.toString(transform),
         transition,
       }}
-      className='relative w-full group/link select-none cursor-grab active:cursor-grabbing touch-none my-[3px]'
+      className='relative w-full group/link select-none cursor-grab active:cursor-grabbing touch-none my-0.5'
     >
       <SidebarMenuItem
-        className='min-w-8 py-0.5 px-1 hover:bg-secondary hover:text-secondary-foreground rounded-md cursor-pointer group-data-[collapsible=icon]:!size-8 group-data-[collapsible=icon]:!min-w-8 group-data-[collapsible=icon]:!max-w-8 group-data-[collapsible=icon]:!p-0 group-data-[collapsible=icon]:flex group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:items-center'
+        className='min-h-8 h-8 min-w-8 py-0 px-1 hover:bg-secondary hover:text-secondary-foreground rounded-md cursor-pointer flex items-center group-data-[collapsible=icon]:!size-8 group-data-[collapsible=icon]:!min-w-8 group-data-[collapsible=icon]:!max-w-8 group-data-[collapsible=icon]:!p-0 group-data-[collapsible=icon]:flex group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:items-center'
         onClick={(e) => {
           if (justDraggedRef.current) return;
           e.preventDefault();
-          try {
-            const parsed = new URL(link.url, window.location.origin);
-            if (parsed.origin === window.location.origin) {
-              router.push(parsed.pathname + parsed.search + parsed.hash);
-              return;
-            }
-          } catch {
-            /* fall through */
-          }
-          window.open(link.url, '_blank', 'noopener,noreferrer');
+          e.stopPropagation();
+          openExternalUrl(link.url);
         }}
       >
-        <div className='flex items-center justify-between w-full min-w-0 group-data-[collapsible=icon]:justify-center'>
+        <div className='flex items-center justify-between w-full min-w-0 h-8 group-data-[collapsible=icon]:justify-center'>
           <div className='flex items-center gap-2 min-w-0 overflow-hidden group-data-[collapsible=icon]:justify-center'>
             <TableIcon
               name={link.icon ?? 'Globe'}
-              width={20}
-              height={20}
-              className='shrink-0'
+              width={18}
+              height={18}
+              className='size-[18px] shrink-0'
             />
-            <span className='truncate group-data-[collapsible=icon]:hidden'>{link.title}</span>
+            <span className='truncate text-sm leading-5 group-data-[collapsible=icon]:hidden'>
+              {link.title}
+            </span>
           </div>
           <DropdownMenu modal={isMobile}>
             <DropdownMenuTrigger asChild>
@@ -1029,6 +1090,7 @@ const DraggableTablesListItem = ({
 }) => {
   const router = useRouter();
   const isMobile = useIsMobile();
+  const { t } = useLanguage();
   const { setOpenMobile } = useSidebar();
   const currentTableCtx = useTableContext();
   const {
@@ -1046,9 +1108,38 @@ const DraggableTablesListItem = ({
     },
   });
 
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [menuArmed, setMenuArmed] = useState(true);
+  const armMenuTimeoutRef = useRef<number | null>(null);
+  const isDesktopShell = isDadixDesktopShell();
+
+  const armMenuAfterPointerUp = () => {
+    const arm = () => {
+      setMenuArmed(true);
+      window.removeEventListener('pointerup', arm);
+      window.removeEventListener('pointercancel', arm);
+      if (armMenuTimeoutRef.current != null) {
+        window.clearTimeout(armMenuTimeoutRef.current);
+        armMenuTimeoutRef.current = null;
+      }
+    };
+    window.addEventListener('pointerup', arm);
+    window.addEventListener('pointercancel', arm);
+    armMenuTimeoutRef.current = window.setTimeout(arm, 400);
+  };
+
+  const openTableMenu = (event: React.MouseEvent) => {
+    if (!canEditTables) return;
+    event.preventDefault();
+    event.stopPropagation();
+    setMenuArmed(false);
+    setMenuOpen(true);
+    armMenuAfterPointerUp();
+  };
+
   const selectTable = () => {
     if (justDraggedRef.current || isDragging) return;
-    router.push(`/dashboard/${projectId}?tableId=${table.id}`);
+    router.push(projectTableHref(projectId, table.id, table.defaultViewId));
     if (isMobile) setOpenMobile(false);
   };
 
@@ -1059,8 +1150,17 @@ const DraggableTablesListItem = ({
       ref={setNodeRef}
       {...attributes}
       {...listeners}
+      onPointerDown={(event) => {
+        if (event.button === 2) {
+          event.stopPropagation();
+          return;
+        }
+        listeners?.onPointerDown?.(event);
+      }}
+      onContextMenu={openTableMenu}
       data-dragging={isDragging}
       data-selected={currentTableCtx.id === table.id}
+      data-menu-open={menuOpen}
       className='relative w-full group/table select-none cursor-grab active:cursor-grabbing touch-none my-0.5'
       style={{
         transform: CSS.Transform.toString(transform),
@@ -1068,22 +1168,45 @@ const DraggableTablesListItem = ({
       }}
     >
       <SidebarMenuItem
-        className='min-h-8 h-8 min-w-8 py-0 px-1 hover:bg-secondary hover:text-secondary-foreground rounded-md cursor-pointer flex items-center group-data-[selected=true]/table:bg-[#EAEAEA] group-data-[selected=true]/table:hover:bg-[#EAEAEA] group-data-[collapsible=icon]:!size-8 group-data-[collapsible=icon]:!min-w-8 group-data-[collapsible=icon]:!max-w-8 group-data-[collapsible=icon]:!p-0 group-data-[collapsible=icon]:flex group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:items-center'
+        className='min-h-8 h-8 min-w-8 py-0 px-1 hover:bg-secondary hover:text-secondary-foreground rounded-md cursor-pointer flex items-center group-data-[selected=true]/table:bg-[#EAEAEA] group-data-[selected=true]/table:hover:bg-[#EAEAEA] group-data-[menu-open=true]/table:bg-[#EAEAEA] group-data-[menu-open=true]/table:hover:bg-[#EAEAEA] group-data-[collapsible=icon]:!size-8 group-data-[collapsible=icon]:!min-w-8 group-data-[collapsible=icon]:!max-w-8 group-data-[collapsible=icon]:!p-0 group-data-[collapsible=icon]:flex group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:items-center'
         onClick={selectTable}
       >
         <div className='flex items-center justify-between w-full min-w-0 h-8 group-data-[collapsible=icon]:justify-center'>
           <div className='flex items-center gap-2 min-w-0 overflow-hidden group-data-[collapsible=icon]:justify-center'>
-            <TableIcon name={table.icon} width={18} height={18} className='shrink-0 group-data-[selected=true]/table:text-foreground' />
-            <span className='truncate text-sm leading-none group-data-[collapsible=icon]:hidden group-data-[selected=true]/table:text-foreground'>{table.name}</span>
+            <TableIcon name={table.icon} width={18} height={18} className='shrink-0 group-data-[selected=true]/table:text-foreground group-data-[menu-open=true]/table:text-foreground' />
+            <span
+              data-table-name={table.name}
+              data-table-id={String(table.id)}
+              data-table-source={table.sourceKind ?? 'local'}
+              className='truncate text-sm leading-5 group-data-[collapsible=icon]:hidden group-data-[selected=true]/table:text-foreground group-data-[menu-open=true]/table:text-foreground'
+            >
+              {table.name}
+            </span>
+            {table.sourceKind === 'linked_file' ? (
+              <span className='ml-1 shrink-0 text-[10px] text-muted-foreground group-data-[collapsible=icon]:hidden' title={t('table.source.linkedFile')}>
+                {t('table.source.file')}
+              </span>
+            ) : table.sourceKind === 'external_database' ? (
+              <span className='ml-1 shrink-0 text-[10px] text-muted-foreground group-data-[collapsible=icon]:hidden' title={t('table.source.external')}>
+                {t('table.source.db')}
+              </span>
+            ) : null}
           </div>
 
           {/* Modal behavior only on mobile to prevent underlying interactions */}
           {canEditTables && (
-            <DropdownMenu modal={isMobile}>
+            <DropdownMenu
+              modal={isMobile}
+              open={menuOpen}
+              onOpenChange={(open) => {
+                setMenuOpen(open);
+                if (!open) setMenuArmed(true);
+              }}
+            >
               <DropdownMenuTrigger asChild>
                 <Button
                   variant='ghost'
-                  className='flex text-muted-foreground size-6 md:opacity-0 md:pointer-events-none group-data-[selected=true]/table:text-foreground md:group-hover/table:opacity-100 md:transform-gpu md:transition-all md:duration-200 md:ease-out md:motion-reduce:transition-none md:group-hover:pointer-events-auto md:group-focus-within:pointer-events-auto group-data-[collapsible=icon]:hidden'
+                  className='flex text-muted-foreground size-6 md:opacity-0 md:pointer-events-none group-data-[selected=true]/table:text-foreground group-data-[menu-open=true]/table:text-foreground md:group-hover/table:opacity-100 md:group-data-[menu-open=true]/table:opacity-100 md:transform-gpu md:transition-all md:duration-200 md:ease-out md:motion-reduce:transition-none md:group-hover:pointer-events-auto md:group-data-[menu-open=true]/table:pointer-events-auto md:group-focus-within:pointer-events-auto group-data-[collapsible=icon]:hidden'
                   size='icon'
                   onClick={(e) => e.stopPropagation()}
                 >
@@ -1094,9 +1217,20 @@ const DraggableTablesListItem = ({
               </DropdownMenuTrigger>
               <DropdownMenuContent
                 align='end'
-                className='w-40 z-9999'
+                className='relative w-40 z-9999'
                 onClick={(e) => e.stopPropagation()}
+                onOpenAutoFocus={(event) => event.preventDefault()}
+                onCloseAutoFocus={(event) => event.preventDefault()}
+                onPointerDownOutside={(event) => {
+                  if (!menuArmed) event.preventDefault();
+                }}
+                onInteractOutside={(event) => {
+                  if (!menuArmed) event.preventDefault();
+                }}
               >
+                {!menuArmed && (
+                  <div className='absolute inset-0 z-10' aria-hidden />
+                )}
                 <DropdownMenuItem
                   onClick={(e) => {
                     e.stopPropagation();
@@ -1121,6 +1255,18 @@ const DraggableTablesListItem = ({
                   <Table2 className='size-4' />
                   <span>Table</span>
                 </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (`${currentTableCtx.id}` !== `${table.id}`) {
+                      router.push(`/dashboard/${projectId}?tableId=${table.id}`);
+                    }
+                    window.setTimeout(() => openViewsEditorDialog(), 80);
+                  }}
+                >
+                  <LucideLayers3 className='size-4' />
+                  <span>All views</span>
+                </DropdownMenuItem>
                 {assignTableToGroup && groups.length > 1 && (
                   <DropdownMenuSub>
                     <DropdownMenuSubTrigger>
@@ -1142,34 +1288,38 @@ const DraggableTablesListItem = ({
                     </DropdownMenuSubContent>
                   </DropdownMenuSub>
                 )}
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    openAPIConfigDialog({ tableId: String(table.id), projectId: String(projectId) });
-                  }}
-                >
-                  <Braces className='size-4' />
-                  <span>API</span>
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    openApiKeysDialog();
-                  }}
-                >
-                  <LucideKey className='size-4' />
-                  <span>AI API Keys</span>
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    openTableWebhookDialog({ tableId: String(table.id), projectId: String(projectId), tableName: table.name });
-                  }}
-                >
-                  <LucideWebhook className='size-4' />
-                  <span>Webhook</span>
-                </DropdownMenuItem>
+                {!isDesktopShell && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        openAPIConfigDialog({ tableId: String(table.id), projectId: String(projectId) });
+                      }}
+                    >
+                      <Braces className='size-4' />
+                      <span>API</span>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        openApiKeysDialog();
+                      }}
+                    >
+                      <LucideKey className='size-4' />
+                      <span>AI Keys</span>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        openTableWebhookDialog({ tableId: String(table.id), projectId: String(projectId), tableName: table.name });
+                      }}
+                    >
+                      <LucideWebhook className='size-4' />
+                      <span>Webhook</span>
+                    </DropdownMenuItem>
+                  </>
+                )}
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
                   variant='destructive'

@@ -80,6 +80,8 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 // import { LoadingIndicator } from '@/components/loading-indicator/LoadingIndicator';
 import recordControllers from '@/lib/record';
 import { FormulaEval } from './formula-eval/FormulaEval';
+import { FileFieldControl } from '@/components/file-field/FileFieldControl';
+import { fileFieldDisplayName } from '@/lib/fileField';
 import { availableDadixFieldsDataTypes } from '@/constants';
 import {
   DropdownMenu,
@@ -113,6 +115,7 @@ import type { DocumentTemplate, Field, TextFieldOptions } from '@/types';
 import { useEventHandler } from '@/hooks/useEventHandler';
 import { evalDadixCode } from '@/lib/dadixCodeEval';
 import { decodeRelationData, isEncodedRelationData } from '@/lib/utils';
+import { findLocalTableById } from '@/lib/dev-demo-data';
 import { useMutex } from '@/hooks/useMutex';
 import { useLanguage } from '@/context/LanguageContext';
 import { useAuthContext } from '@/context/AuthContext';
@@ -173,6 +176,23 @@ type RecordEditorRow = {
   buttonConfig?: RecordEditorButtonConfig;
 };
 type RecordEditorLayout = { rows: RecordEditorRow[] };
+
+function getRecordFieldValue(
+  record: Record<string, unknown> | null,
+  field: Field
+): unknown {
+  if (!record || !field) return undefined;
+  if (Object.prototype.hasOwnProperty.call(record, field.name)) {
+    return record[field.name];
+  }
+  const idKey = String(field.id);
+  if (Object.prototype.hasOwnProperty.call(record, idKey)) {
+    return record[idKey];
+  }
+  const wanted = String(field.name).toLowerCase();
+  const match = Object.keys(record).find((key) => key.toLowerCase() === wanted);
+  return match ? record[match] : undefined;
+}
 
 function getDefaultRecordEditorLayout(sortedFields: Field[]): RecordEditorLayout {
   return {
@@ -598,10 +618,11 @@ export function TableRecordEditorsManager() {
                 };
                 if (indexOfTableInTableRecordEditors < 0) {
                   newRecordEditorsStates.push({ ...newRecordEditorState });
+                } else {
+                  newRecordEditorsStates[indexOfTableInTableRecordEditors] = {
+                    ...newRecordEditorState,
+                  };
                 }
-                newRecordEditorsStates[indexOfTableInTableRecordEditors] = {
-                  ...newRecordEditorState,
-                };
                 setRecordEditorsStates([...newRecordEditorsStates]);
                 resolve({ updatedData: [...newRecordEditorsStates] });
               } catch (err) {
@@ -1117,16 +1138,18 @@ function TableRecordEditor({
   const protocolUserName = authCtx?.state?.user?.username || authCtx?.state?.user?.email || 'User';
 
   const tableFieldsToUse = useMemo(() => {
+    const contextTable = liveTableCtx?.table;
     if (
-      liveTableCtx?.id !== undefined &&
-      liveTableCtx?.id !== null &&
-      String(liveTableCtx.id) === String(tableId) &&
-      liveTableCtx?.table?.fields?.length
+      contextTable?.fields?.length &&
+      String(contextTable.id) === String(tableId)
     ) {
-      return liveTableCtx.table.fields;
+      return contextTable.fields;
     }
-    return tableFields ?? [];
-  }, [liveTableCtx?.id, liveTableCtx?.table?.fields, tableId, tableFields]);
+    if (tableFields?.length) {
+      return tableFields;
+    }
+    return findLocalTableById(tableId ?? '')?.fields ?? [];
+  }, [liveTableCtx?.table, tableId, tableFields]);
 
   const sortedFields = useMemo(
     () =>
@@ -1394,6 +1417,8 @@ function TableRecordEditor({
             pendingProtocolOldValuesRef.current = {};
             const formatVal = (v: unknown) => {
               if (v === undefined || v === null || v === '') return '(leer)';
+              const fileName = fileFieldDisplayName(v);
+              if (fileName) return `"${fileName}"`;
               const s = String(v);
               return s.length > 40 ? `"${s.slice(0, 37)}..."` : `"${s}"`;
             };
@@ -1449,11 +1474,11 @@ function TableRecordEditor({
       if (!tableIdRef.current) return;
       openTableRecord({
         tableId: tableIdRef.current,
-        tableFields,
+        tableFields: tableFieldsToUse,
         record: nextRecord,
       });
     },
-    [tableFields]
+    [tableFieldsToUse]
   );
 
   const getNextRecord = useCallback(() => {
@@ -1827,7 +1852,7 @@ function TableRecordEditor({
                       { labelContent: ReactNode; fieldInputs: ReactNode }
                     > = {};
                     sortedFields.forEach((field) => {
-                      const fieldValue = record[field.name];
+                      const fieldValue = getRecordFieldValue(record, field);
                       const labelContent = <Label>{field.name}</Label>;
                       const fieldInputs = (
                         <>
@@ -1935,10 +1960,23 @@ function TableRecordEditor({
                           )}
                           {field.type === availableDadixFieldsDataTypes.AI && (
                             <div className='flex flex-row flex-wrap items-center px-3 py-1 min-h-9 text-sm bg-muted/15 border rounded-md'>
-                              {record[field.name] != null && String(record[field.name]).trim() !== ''
-                                ? String(record[field.name])
-                                : (field.placeholder ?? 'Strings in "Anführungszeichen", Felder mit .feldname')}
+                              {fieldValue != null && String(fieldValue).trim() !== ''
+                                ? String(fieldValue)
+                                : (field.placeholder ?? t('table.formulaPlaceholder'))}
                             </div>
+                          )}
+                          {field.type === availableDadixFieldsDataTypes.FILE && (
+                            <FileFieldControl
+                              value={fieldValue}
+                              disabled={!canEditRecords}
+                              placeholder={field.placeholder}
+                              onChange={(next) => {
+                                handleItemChange({
+                                  itemFieldName: field.name,
+                                  value: next,
+                                });
+                              }}
+                            />
                           )}
                           {field.type ===
                             availableDadixFieldsDataTypes.RELATION && (

@@ -59,7 +59,7 @@ function SelectRecordContent({
   return (
     <>
       {createPortal(
-        <div className='fixed top-0 left-0 w-full h-full bg-black/20 overflow-hidden z-20'>
+        <div className='fixed top-0 left-0 w-full h-full bg-black/20 overflow-hidden z-50'>
           <div className='flex flex-col top-0 left-0 w-full h-full bg-background border-[5px solid #f00] md:m-[10px] md:w-[calc(100%-20px)] md:h-[calc(100%-20px)] md:rounded-md border overflow-hidden '>
             <div className='sticky top-0 lef-0 flex flex-row gap-2 p-4 bg-background'>
               <Button variant='outline' size='icon' onClick={onClose}>

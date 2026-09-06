@@ -2,19 +2,7 @@ import type { IDadixView } from '@/types';
 import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { getTableViews } from '@/lib/view';
 import { dadixEvents } from '@/constants/events';
-import {
-  DEV_DEMO_VIEW,
-  DEV_DEMO_VIEW_2,
-  DEV_DEMO_VIEW_3,
-  DEV_DEMO_VIEW_4,
-  DEV_DEMO_TABLE_ID,
-  DEV_DEMO_TABLE_2_ID,
-  DEV_DEMO_TABLE_3_ID,
-  DEV_DEMO_TABLE_4_ID,
-  isDevDemoTable,
-  findLocalTableById,
-  tableFieldsToGridViewFields,
-} from '@/lib/dev-demo-data';
+import { getLocalViewsForTable, usesLocalViews } from '@/lib/dev-demo-data';
 
 interface ITableViews {
   tableId: string | undefined;
@@ -56,60 +44,26 @@ export function TableViewsContextProvider({
     }
 
     const tid = String(tableId);
+    tableIdRef.current = tableId;
+
+    if (usesLocalViews(tableId)) {
+      const list = getLocalViewsForTable(tableId);
+      viewsCacheRef.current[tid] = list;
+      setViews(list);
+      setIsLoading(false);
+      setInitialized(true);
+      return;
+    }
+
     const cached = viewsCacheRef.current[tid];
-    if (cached && cached.length >= 0) {
+    if (cached) {
       setViews(cached);
       setIsLoading(false);
       setInitialized(true);
     } else {
+      setViews([]);
       setIsLoading(true);
       setInitialized(false);
-    }
-    tableIdRef.current = tableId;
-
-    if (isDevDemoTable(tableId)) {
-      const list =
-        tableId === DEV_DEMO_TABLE_4_ID
-          ? [DEV_DEMO_VIEW_4]
-          : tableId === DEV_DEMO_TABLE_3_ID
-            ? [DEV_DEMO_VIEW_3]
-            : tableId === DEV_DEMO_TABLE_2_ID
-              ? [DEV_DEMO_VIEW_2]
-              : [DEV_DEMO_VIEW];
-      viewsCacheRef.current[tid] = list;
-      viewsCacheRef.current[DEV_DEMO_TABLE_ID] = [DEV_DEMO_VIEW];
-      viewsCacheRef.current[DEV_DEMO_TABLE_2_ID] = [DEV_DEMO_VIEW_2];
-      viewsCacheRef.current[DEV_DEMO_TABLE_3_ID] = [DEV_DEMO_VIEW_3];
-      viewsCacheRef.current[DEV_DEMO_TABLE_4_ID] = [DEV_DEMO_VIEW_4];
-      setViews(list);
-      setIsLoading(false);
-      setInitialized(true);
-      return;
-    }
-
-    if (
-      process.env.NODE_ENV === 'development' &&
-      String(tableId).startsWith('dev-table-')
-    ) {
-      const table = findLocalTableById(tableId);
-      const list = [
-        {
-          id: 1,
-          tableId: String(tableId),
-          name: 'Alle Einträge',
-          icon: 'LayoutGrid',
-          order: 0,
-          filter: '',
-          sort: '',
-          type: 'gridView',
-          fields: tableFieldsToGridViewFields(table?.fields),
-        } as IDadixView,
-      ];
-      viewsCacheRef.current[tid] = list;
-      setViews(list);
-      setIsLoading(false);
-      setInitialized(true);
-      return;
     }
 
     getTableViews({ tableId })
@@ -130,6 +84,7 @@ export function TableViewsContextProvider({
       })
       .catch((err) => {
         if (!cached) setIsLoading(false);
+        setInitialized(true);
         console.error('error getting views::', err);
       });
   }, [tableId]);
@@ -174,13 +129,16 @@ export function TableViewsContextProvider({
 
     function handleUpdateViewEvent(evnt: Event) {
       const { tableId, id, updates } = (evnt as CustomEvent).detail || {};
-      if (`${tableIdRef.current}` !== `${tableId}` || !id || !updates) return;
+      if (`${tableIdRef.current}` !== `${tableId}` || id == null || !updates)
+        return;
 
-      const editedView = views.find((view) => `${view.id}` === `${id}`);
-      if (!editedView) return;
+      setViews((currentViews) => {
+        const editedView = currentViews.find(
+          (view) => `${view.id}` === `${id}`
+        );
+        if (!editedView) return currentViews;
 
-      setViews((views) => {
-        const viewsToBeUpdated = {
+        const viewsToBeUpdated: Record<string, Partial<IDadixView>> = {
           [`${id}`]: { ...updates },
         };
         const viewsAttributesToBeUpdated = Object.keys(updates);
@@ -188,28 +146,28 @@ export function TableViewsContextProvider({
         if (viewsAttributesToBeUpdated.indexOf('order') >= 0) {
           const reorderFrom = editedView.order ?? 0;
           const reorderTo = updates.order ?? 0;
-          if (reorderFrom === reorderTo) return views;
-          const reorderDirection = Math.sign(reorderFrom - reorderTo);
-          const minOrder = Math.min(reorderFrom, reorderTo);
-          const maxOrder = Math.max(reorderFrom, reorderTo);
-          views.map((view) => {
-            if (`${view.id}` === `${id}`) return null;
-            if (view.order < minOrder || view.order > maxOrder) return null;
-            viewsToBeUpdated[`${view.id}`] = {
-              ...(viewsToBeUpdated[`${view.id}`] || {}),
-              order: view.order + reorderDirection,
-            };
-            return null;
-          });
+          if (reorderFrom !== reorderTo) {
+            const reorderDirection = Math.sign(reorderFrom - reorderTo);
+            const minOrder = Math.min(reorderFrom, reorderTo);
+            const maxOrder = Math.max(reorderFrom, reorderTo);
+            currentViews.forEach((view) => {
+              if (`${view.id}` === `${id}`) return;
+              if (view.order < minOrder || view.order > maxOrder) return;
+              viewsToBeUpdated[`${view.id}`] = {
+                ...(viewsToBeUpdated[`${view.id}`] || {}),
+                order: view.order + reorderDirection,
+              };
+            });
+          }
         }
-        const next = views
+        const next = currentViews
           .map((view) => {
             if (viewsToBeUpdated[`${view.id}`]) {
               return { ...view, ...viewsToBeUpdated[`${view.id}`] };
             }
             return view;
           })
-          .sort((field1, field2) => field1.order - field2.order);
+          .sort((view1, view2) => view1.order - view2.order);
         viewsCacheRef.current[String(tableIdRef.current)] = next;
         return next;
       });

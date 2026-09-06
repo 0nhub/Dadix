@@ -2,13 +2,20 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <link rel="icon" type="image/png" href="/dadix-icon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Dadix</title>
   </head>
 
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;font:14px/1.4 system-ui,sans-serif;color:#111;">
+        Dadix wird geladen…
+      </div>
+    </div>
+    <script>
+      document.title = "DADIX_HTML_OK";
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

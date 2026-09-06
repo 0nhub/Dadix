@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { isTableMarkedDeleted } from '@/context/CurrentProjectContext';
 import { DataTable } from '@/components/data-table';
 import { SiteHeader } from '@/components/site-header';
 import { SidebarInset } from '@/components/ui/sidebar';
@@ -44,6 +45,10 @@ import {
   FIELD_PANEL_LAYOUT_CLOSED,
 } from '@/components/table-editor/EditTableFieldPanel';
 import { useEventHandler } from '@/hooks/useEventHandler';
+import { dadixEvents } from '@/constants/events';
+import tableService from '@/lib/table';
+import { projectTableHref } from '@/lib/projectHref';
+import { LinkedFileBanner } from '@/components/linked-file/LinkedFileBanner';
 
 export default function Page() {
   return <TablePageContent />;
@@ -51,8 +56,8 @@ export default function Page() {
 
 function TablePageContent() {
   const router = useRouter();
-  // const { projectId } = useParams();
-  // const tableId = useSearchParams().get('tableId');
+  const searchParams = useSearchParams();
+  const urlTableId = searchParams.get('tableId');
   const dashboardCtx = useDashboardContext();
   const currentProjectCtx = useCurrentProjectContext();
   const currentTableCtx = useTableContext();
@@ -98,6 +103,29 @@ function TablePageContent() {
   }, []);
 
   useEffect(() => {
+    if (!currentProjectCtx.id) return;
+    let cancelled = false;
+    void tableService
+      .getTables({ projectId: String(currentProjectCtx.id) })
+      .then((tables) => {
+        if (cancelled || !Array.isArray(tables)) return;
+        for (const createdTable of tables) {
+          window.dispatchEvent(
+            new CustomEvent(dadixEvents.tableEvents.onCreate, {
+              detail: { projectId: currentProjectCtx.id, createdTable },
+            })
+          );
+        }
+      })
+      .catch((err) => {
+        console.error('sync project tables into sidebar:', err);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [currentProjectCtx.id, currentTableCtx.initialized]);
+
+  useEffect(() => {
     // this useEffect handle case where user have no tables
     if (!dashboardCtx.initialized) return;
     if (!currentProjectCtx.initialized) return;
@@ -120,69 +148,91 @@ function TablePageContent() {
         (project) => `${project.id}` === `${currentProjectCtx.id}`
       )
     ) {
-      // handle case where opened project no longer exist
-      UserLocalStorage.setProjectId('');
-      UserLocalStorage.setTableId('');
-      UserLocalStorage.setViewId('');
-      UserLocalStorage.preferDashboardHome();
-      router.push('/dashboard');
-      return;
+      const timer = window.setTimeout(() => {
+        UserLocalStorage.setProjectId('');
+        UserLocalStorage.setTableId('');
+        UserLocalStorage.setViewId('');
+        UserLocalStorage.preferDashboardHome();
+        router.push('/dashboard');
+      }, 250);
+      return () => window.clearTimeout(timer);
     }
-    if (!currentProjectCtx.initialized) return;
-    if (currentProjectCtx.tables.length === 0) return;
     if (
       currentTableCtx.id &&
-      currentProjectCtx.tables.findIndex(
-        (table) => `${table.id}` === `${currentTableCtx.id}`
-      ) >= 0
-    )
-      return;
-    const lastOpenedTableId = UserLocalStorage.getTableId();
-    let tableId = lastOpenedTableId;
-    const isLastOpenedTableExist =
-      lastOpenedTableId &&
-      currentProjectCtx.tables.find(
-        (table) => `${table.id}` === lastOpenedTableId
+      isTableMarkedDeleted(currentTableCtx.id)
+    ) {
+      const remaining = currentProjectCtx.tables.filter(
+        (table) => !isTableMarkedDeleted(table.id)
       );
-    if (!isLastOpenedTableExist) {
-      tableId = `${currentProjectCtx.tables[0].id}`;
+      if (remaining[0]) {
+        router.replace(
+          projectTableHref(
+            currentProjectCtx.id,
+            remaining[0].id,
+            remaining[0].defaultViewId
+          )
+        );
+      } else {
+        router.replace(`/dashboard/${currentProjectCtx.id}`);
+      }
+      return;
     }
-
-    router.push(`/dashboard/${currentProjectCtx.id}?tableId=${tableId}`);
+    // Keep an explicit URL tableId even if the list has not caught up yet
+    // (create → navigate → sidebar/state sync). Do not steal the new table.
+    if (currentTableCtx.id) return;
+    if (!currentProjectCtx.initialized) return;
+    if (currentProjectCtx.tables.length === 0) return;
+    const lastOpenedTableId = UserLocalStorage.getTableId();
+    const lastOpenedExists =
+      !!lastOpenedTableId &&
+      currentProjectCtx.tables.some(
+        (table) => `${table.id}` === `${lastOpenedTableId}`
+      );
+    const tableId = lastOpenedExists
+      ? `${lastOpenedTableId}`
+      : `${currentProjectCtx.tables[0].id}`;
+    const defaultViewId = currentProjectCtx.tables.find(
+      (table) => `${table.id}` === tableId
+    )?.defaultViewId;
+    router.replace(projectTableHref(currentProjectCtx.id, tableId, defaultViewId));
   }, [
     dashboardCtx.initialized,
     currentProjectCtx.initialized,
     currentProjectCtx.id,
     currentProjectCtx.tables,
     currentTableCtx.id,
+    router,
   ]);
 
   return (
     <>
-      <DashboardSidebar variant='inset' />
-      <SidebarInset className='min-h-full shrink-0 grow overflow-hidden flex flex-col'>
+      <div className='dadix-project-shell flex h-full min-h-0 w-full flex-col'>
         <FindInViewProvider>
           <SiteHeader
             isSearchActive={isSearchActive}
             setIsSearchActive={setIsSearchActive}
             selectedTableId={(currentTableCtx.id ?? '').toString()}
           />
-          <div className='-ml-[1px] w-full flex-1 min-h-0 overflow-hidden'>
-          {currentTableCtx.isLoading ? (
-            <div className='w-full pt-2.5 pb-2.5 flex align-baseline justify-center'>
-              {/*<LoadingIndicator />*/}
-            </div>
-          ) : (
-            currentTableCtx.initialized && (
-              <>
-                <Views
-                  isSearchActive={isSearchActive}
-                  setIsSearchActive={setIsSearchActive}
-                />
-                <TableRecordEditorsManager />
-              </>
-            )
-          )}
+          <div className='flex min-h-0 flex-1 overflow-hidden'>
+            <DashboardSidebar variant='inset' />
+            <SidebarInset className='min-h-0 min-w-0 flex-1 overflow-hidden flex flex-col rounded-none'>
+              <div className='w-full flex-1 min-h-0 overflow-hidden'>
+              {urlTableId || currentTableCtx.id ? (
+                <>
+                  <LinkedFileBanner />
+                  <Views
+                    isSearchActive={isSearchActive}
+                    setIsSearchActive={setIsSearchActive}
+                  />
+                  <TableRecordEditorsManager />
+                </>
+              ) : currentTableCtx.isLoading ? (
+                <div className='w-full pt-2.5 pb-2.5 flex align-baseline justify-center'>
+                  {/*<LoadingIndicator />*/}
+                </div>
+              ) : null}
+              </div>
+            </SidebarInset>
           </div>
         </FindInViewProvider>
         <CreateTableDialog />
@@ -208,7 +258,7 @@ function TablePageContent() {
         <CreateViewDialog />
         <UpdateViewDialog />
         <DeleteViewConfirmDialog />
-      </SidebarInset>
+      </div>
     </>
   );
 }
@@ -244,11 +294,13 @@ function Views({
         (v) => `${v.id}` === `${selectedViewId}`
       );
     if (currentViewValid) {
-      UserLocalStorage.setViewId(`${selectedViewId}`);
+      UserLocalStorage.setViewId(`${selectedViewId}`, currentTableCtx.id);
       return;
     }
 
-    const lastOpenedViewId = UserLocalStorage.getViewId();
+    const lastOpenedViewId =
+      UserLocalStorage.getViewIdForTable(currentTableCtx.id) ||
+      UserLocalStorage.getViewId();
     let viewId = lastOpenedViewId;
 
     const isLastOpenedViewExist =
@@ -260,9 +312,9 @@ function Views({
       viewId = `${currentTableViewsCtx.views[0].id}`;
     }
 
-    UserLocalStorage.setViewId(`${viewId}`);
+    UserLocalStorage.setViewId(`${viewId}`, currentTableCtx.id);
     router.replace(
-      `/dashboard/${projectId}?tableId=${currentTableCtx.id}&viewId=${viewId}`
+      projectTableHref(projectId, currentTableCtx.id, viewId)
     );
   }, [
     currentTableCtx.id,
@@ -274,7 +326,11 @@ function Views({
     router,
   ]);
 
-  if (!selectedViewId) {
+  const resolvedView =
+    view ??
+    currentTableViewsCtx.views[0];
+
+  if (!selectedViewId && !resolvedView) {
     return null;
   }
 
@@ -288,27 +344,17 @@ function Views({
     );
   }*/
 
-  if (currentTableViewsCtx.isLoading) {
-    return (
-      <div className='flex flex-col justify-center items-center gap-2 pt-8'>
-        {/*<LoadingIndicator visibilityDelay={false} />*/}
-      </div>
-    );
-  }
-
-  if (currentTableViewsCtx.initialized && view) {
-    switch (view.type) {
+  if (currentTableCtx.id) {
+    switch (resolvedView?.type || 'gridView') {
       case 'gridView':
         return (
-          currentTableCtx.id && (
-            <GridView
-              tableId={currentTableCtx.id.toString()}
-              viewId={`${view.id}`}
-              globalFilter={currentTableCtx.filters}
-              isSearchActive={isSearchActive}
-              setIsSearchActive={setIsSearchActive}
-            />
-          )
+          <GridView
+            tableId={currentTableCtx.id.toString()}
+            viewId={`${resolvedView?.id ?? selectedViewId ?? ''}`}
+            globalFilter={currentTableCtx.filters}
+            isSearchActive={isSearchActive}
+            setIsSearchActive={setIsSearchActive}
+          />
         );
     }
   }

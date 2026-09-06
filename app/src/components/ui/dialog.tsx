@@ -38,7 +38,7 @@ function DialogOverlay({
     <DialogPrimitive.Overlay
       data-slot='dialog-overlay'
       className={cn(
-        'data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 bg-black/25 fixed inset-0 z-9999 ',
+        'data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 bg-black/10 fixed inset-0 z-9999 ',
         className
       )}
       {...props}
@@ -61,11 +61,11 @@ function DialogContent({
         data-slot='dialog-content'
         className={cn(
           // base styles + animations
-          'bg-background data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 fixed left-1/2 top-1/2 z-9999 w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-lg border p-6 shadow-lg duration-200 sm:max-w-lg',
+          'bg-background data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 fixed left-1/2 top-[14vh] z-9999 w-full max-w-[calc(100%-2rem)] -translate-x-1/2 translate-y-0 gap-4 rounded-lg border p-6 shadow-md duration-200 sm:max-w-lg',
           // Ensure the dialog sizes to its content (height auto) and avoid grid stretching in Safari
           'h-auto grid items-start auto-rows-min',
-          // Constrain dialog height and allow internal scrolling for very tall content
-          'max-h-[calc(100vh-2rem)] overflow-y-auto',
+          // Grow downward within the upper two thirds plus remaining space
+          'max-h-[calc(86vh-1rem)] overflow-y-auto',
           className
         )}
         {...props}

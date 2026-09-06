@@ -7,6 +7,7 @@ import type {
 } from '@/types';
 import { callApi } from './api';
 import { dadixEvents } from '@/constants/events';
+import { getTableViews } from './view';
 import {
   createLocalTable,
   findLocalTable,
@@ -16,85 +17,96 @@ import {
   isDevTable,
   isLocalDevProject,
   setDevDemoFieldOrder,
+  persistTableFieldAction,
   setDevDemoFieldOverride,
   upsertLocalTable,
 } from './dev-demo-data';
+
+function announceCreatedTable(projectId: string, createdTable: unknown) {
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(
+    new CustomEvent(dadixEvents.tableEvents.onCreate, {
+      detail: { projectId, createdTable },
+    })
+  );
+  window.dispatchEvent(new CustomEvent(dadixEvents.tableEvents.onRefetchTables));
+}
+
+async function withDefaultView<T extends { id?: string | number; defaultViewId?: string | number }>(
+  createdTable: T
+): Promise<T> {
+  if (createdTable.defaultViewId != null || createdTable.id == null) {
+    return createdTable;
+  }
+  try {
+    const viewsRes = await getTableViews({ tableId: String(createdTable.id) });
+    const first = (viewsRes as { views?: Array<{ id: string | number }> }).views?.[0];
+    if (first?.id != null) {
+      return { ...createdTable, defaultViewId: first.id };
+    }
+  } catch {
+    // Default view is created in core; a later views fetch will pick it up.
+  }
+  return createdTable;
+}
 
 async function createTable({
   projectId,
   name,
   icon,
   silent = false,
+  sourceKind = 'local',
+  filePath,
+  fileFormat,
+  connection,
 }: {
   projectId: string;
   name: string;
   icon: string;
   silent?: boolean;
+  sourceKind?: 'local' | 'linked_file' | 'external_database';
+  filePath?: string;
+  fileFormat?: string;
+  connection?: Record<string, unknown>;
 }) {
   if (process.env.NODE_ENV === 'development' && isLocalDevProject(projectId)) {
     const mockTable = createLocalTable(projectId, name, icon);
-    if (!silent && typeof window !== 'undefined') {
-      window.dispatchEvent(
-        new CustomEvent(dadixEvents.tableEvents.onCreate, {
-          detail: { projectId, createdTable: mockTable },
-        })
-      );
-    }
+    if (!silent) announceCreatedTable(projectId, mockTable);
     return mockTable;
   }
-  try {
-    const result = await callApi.post('/table', {
-      projectId,
-      name: name.trim(),
-      icon,
-    });
-    if (result.status !== 201)
-      throw new Error(result?.data?.message || 'Error creating table');
-    if (!silent) {
-      window.dispatchEvent(
-        new CustomEvent(dadixEvents.tableEvents.onCreate, {
-          detail: { projectId, createdTable: { ...result.data } },
-        })
-      );
-    }
-    return result.data;
-  } catch (err) {
-    if (process.env.NODE_ENV === 'development') {
-      const now = new Date().toISOString();
-      const mockTable = {
-        id: `dev-table-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
-        name: name.trim(),
-        icon,
-        userId: 'dev-user',
-        projectId,
-        order: 0,
-        fields: [],
-        createdAt: now,
-        updatedAt: now,
-      };
-      if (!silent && typeof window !== 'undefined') {
-        window.dispatchEvent(
-          new CustomEvent(dadixEvents.tableEvents.onCreate, {
-            detail: { projectId, createdTable: mockTable },
-          })
-        );
-      }
-      return mockTable;
-    }
-    throw err;
+  const result = await callApi.post('/table', {
+    projectId,
+    name: name.trim(),
+    icon,
+    sourceKind,
+    filePath,
+    fileFormat,
+    connection,
+  });
+  if (result.status !== 201)
+    throw new Error(result?.data?.message || 'Error creating table');
+  const createdTable = await withDefaultView({ ...result.data });
+  if (!silent) {
+    announceCreatedTable(projectId, createdTable);
   }
+  return createdTable;
 }
 
 async function getTables({ projectId }: { projectId: string }) {
   if (isLocalDevProject(projectId)) {
     return getLocalProjectTables(projectId);
   }
-  // get all tables of a project
   const response = await callApi.get(`/table?projectId=${projectId}`);
-  if (!response || !response.data) {
-    throw new Error('Error get project tables');
+  if (!response) {
+    return [];
   }
-  return response.data;
+  if (Array.isArray(response.data)) {
+    return response.data;
+  }
+  if (Array.isArray(response.data?.tables)) {
+    return response.data.tables;
+  }
+  return [];
 }
 
 async function getTable({
@@ -200,17 +212,17 @@ async function createTableField({
       id,
       name: (fieldData.name || 'Feld').trim(),
       type,
-      size: type === 'TEXT' ? 255 : 0,
+      size: type === 'TEXT' ? 255 : type === 'FILE' ? 180 : 0,
       order,
       options: type === 'CHOICE' ? [] : undefined,
       isVisible: true,
       contentAlign: 'left',
-      action: 'edit',
+      action: type === 'FILE' ? 'edit' : null,
     };
     if (fieldData.textOptions) mockField.textOptions = fieldData.textOptions;
     if (fieldData.relationOptions) mockField.relationOptions = fieldData.relationOptions;
     if (fieldData.placeholder !== undefined) mockField.placeholder = fieldData.placeholder;
-    if (fieldData.defaultValue !== undefined && type !== 'AI') mockField.defaultValue = fieldData.defaultValue;
+    if (fieldData.defaultValue !== undefined && type !== 'AI' && type !== 'FILE') mockField.defaultValue = fieldData.defaultValue;
     if (type === 'AI') mockField.aiOptions = fieldData.aiOptions ?? { prompt: '', outputType: 'TEXT', apiKeyId: '' };
     if (isDevOnlyTable) {
       const table = findLocalTableById(tableId);
@@ -224,16 +236,24 @@ async function createTableField({
     return { status: 201, data: mockField };
   }
 
+  const name = String(fieldData.name ?? '').trim();
+  const typeName = String(fieldData.type ?? 'TEXT');
+  if (!name) {
+    throw new Error(`FIELD_CREATE_FAILED table_id=${tableId} type=${typeName} reason=name is required`);
+  }
   try {
     const res = await callApi.post(`/column`, {
       tableId,
-      name: fieldData.name,
-      type: fieldData.type,
+      name,
+      type: typeName,
       options: fieldData.options || undefined,
+      ...(typeName === 'FILE' ? { action: 'edit', size: 180 } : {}),
     });
     return res;
   } catch (err) {
-    throw err;
+    const raw = err instanceof Error ? err.message : String(err);
+    if (/^[A-Z][A-Z0-9_]+/.test(raw)) throw err;
+    throw new Error(`FIELD_CREATE_FAILED table_id=${tableId} type=${typeName} reason=${raw}`);
   }
 }
 
@@ -264,6 +284,9 @@ async function patchTableField({
         defaultValue: field.defaultValue,
         aiOptions: field.aiOptions,
       });
+    }
+    if ('action' in field) {
+      persistTableFieldAction(tableId, id, field.action ?? null);
     }
     if (devFieldOrder?.length && isDevDemoTable(tableId)) {
       setDevDemoFieldOrder(tableId, devFieldOrder);

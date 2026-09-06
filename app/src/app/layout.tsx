@@ -3,6 +3,7 @@ import '@/app/globals.css';
 
 import { AuthContextProvider } from '@/context/AuthContext';
 import { LanguageContextProvider } from '@/context/LanguageContext';
+import { Toaster } from '@/components/ui/sonner';
 
 export const metadata: Metadata = {
   title: 'Dadix',
@@ -47,6 +48,7 @@ export default function RootLayout({
         <AuthContextProvider>
           <LanguageContextProvider>
             <>{children}</>
+            <Toaster position='top-center' duration={1800} />
           </LanguageContextProvider>
         </AuthContextProvider>
       </body>

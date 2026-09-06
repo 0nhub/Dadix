@@ -104,11 +104,14 @@ function AddNewTableFieldInput() {
         .catch((err) => {
           setIsSaving(false);
           console.error('Error adding field:', err);
-          toast.error('Failed to add field');
+          const msg = err instanceof Error ? err.message : String(err);
+          console.error('FIELD_CREATE_FAILED', err);
+          toast.error(msg || 'Failed to add field');
         });
     } catch (error) {
-      console.error('Error adding field:', error);
-      toast.error('Failed to add field');
+      const msg = error instanceof Error ? error.message : String(error);
+      console.error('FIELD_CREATE_FAILED', error);
+      toast.error(msg || 'Failed to add field');
     }
   };
 
@@ -132,6 +135,7 @@ function AddNewTableFieldInput() {
       </Select>
       <Input
         placeholder={`${dadixFieldsDataTypes[parseInt(newFieldType) - 1].name} field`}
+        aria-label='New field name'
         value={newFieldName}
         onChange={(e) => setNewFieldName(e.target.value)}
         onKeyDown={(e) => {
@@ -146,6 +150,7 @@ function AddNewTableFieldInput() {
         size='icon'
         onClick={handleAddField}
         disabled={isSaving}
+        aria-label='Add field'
       >
         {isSaving ? <LoaderCircle className='size-4 animate-spin' /> : <Plus />}
       </Button>

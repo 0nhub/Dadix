@@ -4,9 +4,11 @@
 //
 
 import { createContext, useContext, useEffect, useRef, useState } from 'react';
-import type { Table, IFilter } from '@/types';
+import type { Table, IFilter, Field } from '@/types';
 import tableService from '@/lib/table';
 import { dadixEvents } from '@/constants/events';
+import { preferRealFieldName } from '@/lib/fieldNames';
+import { getStoredLocale, t } from '@/lib/i18n';
 import {
   DEV_DEMO_TABLE,
   DEV_DEMO_TABLE_2,
@@ -46,6 +48,20 @@ export interface ITableContext {
   };
 }
 
+function mergeTableFields(previous: Field[] | undefined, incoming: Field[] | undefined): Field[] {
+  const next = incoming ?? [];
+  const prevById = new Map((previous ?? []).map((field) => [String(field.id), field]));
+  return next.map((field) => {
+    const old = prevById.get(String(field.id));
+    if (!old) return field;
+    return {
+      ...old,
+      ...field,
+      name: preferRealFieldName(field.name, old.name),
+    };
+  });
+}
+
 const TableContext = createContext<ITableContext>({
   id: undefined,
   table: undefined,
@@ -73,6 +89,7 @@ export function TableContextProvider({
 }) {
   const tableIdRef = useRef<string | number | undefined>(undefined);
   const tableCacheRef = useRef<Record<string, Table>>({});
+  const refetchGenRef = useRef(0);
   const [currentTable, setCurrentTable] = useState<Table | undefined>(
     undefined
   );
@@ -84,10 +101,15 @@ export function TableContextProvider({
   useEffect(() => {
     if (tableIdRef.current === tableId) return;
     const cacheKey = `${projectId}-${tableId}`;
-    const hasCache = !!tableCacheRef.current[cacheKey];
+    const cached = tableCacheRef.current[cacheKey];
     tableIdRef.current = tableId;
     setError('');
-    if (!hasCache) {
+    if (cached && String(cached.id) === String(tableId)) {
+      setCurrentTable(cached);
+      setIsLoading(false);
+      setInetialized(true);
+    } else {
+      setCurrentTable(undefined);
       setInetialized(false);
       setIsLoading(true);
     }
@@ -107,7 +129,7 @@ export function TableContextProvider({
     const cacheKey = `${projectId}-${tableId}`;
     const cached = tableCacheRef.current[cacheKey];
 
-    if (cached) {
+    if (cached && String(cached.id) === String(tableId)) {
       setCurrentTable(cached);
       UserLocalStorage.setTableId(`${tableId}`);
       setIsLoading(false);
@@ -134,7 +156,7 @@ export function TableContextProvider({
         const o = overrides[String(f.id)];
         if (!o) return f;
         const merged = { ...f, ...o };
-        if (merged.type === 'AI' && 'defaultValue' in merged) {
+        if ((merged.type === 'AI' || merged.type === 'FILE') && 'defaultValue' in merged) {
           const { defaultValue: _, ...rest } = merged;
           return rest as typeof merged;
         }
@@ -195,10 +217,12 @@ export function TableContextProvider({
         if (tableIdRef.current !== requestedTableId) {
           return;
         }
+        const incoming = res.data as Table;
+        const previous = tableCacheRef.current[cacheKey];
         const table = {
-          ...(res.data as Table),
-          fields: (res.data as Table).fields
-            ?.sort((field1, field2) => field1.order - field2.order)
+          ...incoming,
+          fields: mergeTableFields(previous?.fields, incoming.fields)
+            .sort((field1, field2) => field1.order - field2.order)
             .map((field, index) => ({ ...field, order: index })),
         };
         tableCacheRef.current[cacheKey] = table;
@@ -220,7 +244,7 @@ export function TableContextProvider({
           const now = new Date().toISOString();
           const stub = {
             id: requestedTableId,
-            name: 'Neue Tabelle',
+            name: t(getStoredLocale(), 'table.newTable'),
             icon: 'Table',
             userId: 'dev-user',
             projectId: projectId?.toString() || '',
@@ -241,7 +265,12 @@ export function TableContextProvider({
 
   // keep cache in sync whenever currentTable changes (e.g. from events)
   useEffect(() => {
-    if (currentTable && projectId && tableId) {
+    if (
+      currentTable &&
+      projectId &&
+      tableId &&
+      String(currentTable.id) === String(tableId)
+    ) {
       tableCacheRef.current[`${projectId}-${tableId}`] = currentTable;
     }
   }, [currentTable, projectId, tableId]);
@@ -291,9 +320,24 @@ export function TableContextProvider({
         if (newField.order == null || Number.isNaN(Number(newField.order))) {
           newField.order = nextOrder;
         }
+        const existingIndex = (currentTable.fields || []).findIndex(
+          (field) => String(field.id) === String(newField.id)
+        );
+        const fields =
+          existingIndex >= 0
+            ? (currentTable.fields || []).map((field, index) =>
+                index === existingIndex
+                  ? {
+                      ...field,
+                      ...newField,
+                      name: preferRealFieldName(newField.name, field.name),
+                    }
+                  : field
+              )
+            : [...(currentTable.fields || []), newField];
         const updatedTable = {
           ...currentTable,
-          fields: [...(currentTable.fields || []), newField],
+          fields,
         };
         const cacheKey = `${projectId}-${tableId}`;
         if (projectId && tableId != null) {
@@ -327,18 +371,23 @@ export function TableContextProvider({
       if (isDevDemoProject(projectId) || isDevTable(tableId) || isLocalDevProject(projectId)) return;
 
       const cacheKey = `${projectId}-${tableId}`;
+      const gen = ++refetchGenRef.current;
       tableService
         .getTable({ tableId: `${tableId}`, projectId: projectId?.toString() || '' })
         .then((res) => {
           if (tableIdRef.current !== requestedTableId) return;
-          const table = {
-            ...(res.data as Table),
-            fields: (res.data as Table).fields
-              ?.sort((field1, field2) => field1.order - field2.order)
-              .map((field, index) => ({ ...field, order: index })),
-          };
-          tableCacheRef.current[cacheKey] = table;
-          setCurrentTable(table);
+          if (gen !== refetchGenRef.current) return;
+          const incoming = res.data as Table;
+          setCurrentTable((prev) => {
+            const table = {
+              ...incoming,
+              fields: mergeTableFields(prev?.fields ?? tableCacheRef.current[cacheKey]?.fields, incoming.fields)
+                .sort((field1, field2) => field1.order - field2.order)
+                .map((field, index) => ({ ...field, order: index })),
+            };
+            tableCacheRef.current[cacheKey] = table;
+            return table;
+          });
         })
         .catch((err) => {
           console.error('Table refetch failed:', err);
@@ -446,6 +495,21 @@ export function TableContextProvider({
       }
     },
     [tableId, currentTable, projectId]
+  );
+
+  useEventHandler(
+    dadixEvents.tableEvents.onDelete,
+    (evnt: Event) => {
+      const deletedTableId = (evnt as CustomEvent).detail?.tableId;
+      if (deletedTableId == null) return;
+      delete tableCacheRef.current[`${projectId}-${deletedTableId}`];
+      if (String(tableIdRef.current) !== String(deletedTableId)) return;
+      setCurrentTable(undefined);
+      setError('Table not found');
+      setIsLoading(false);
+      setInetialized(true);
+    },
+    [projectId]
   );
 
   // handle create table field option event
@@ -704,6 +768,12 @@ export function TableContextProvider({
     },
     [tableId, currentTable, projectId]
   );
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    (window as Window & { __dadixTableFields?: string[] }).__dadixTableFields =
+      (currentTable?.fields ?? []).map((field) => `${field.id}:${field.name}:${field.type}`);
+  }, [currentTable]);
 
   return (
     <TableContext.Provider

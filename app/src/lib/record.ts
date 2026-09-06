@@ -141,6 +141,7 @@ async function getRecordsByOffset({
   filter = '',
   order = 'ASC',
   orderBy = 'id',
+  sort,
 }: {
   tableId: string;
   limit?: number;
@@ -148,6 +149,7 @@ async function getRecordsByOffset({
   filter?: string;
   order?: 'ASC' | 'DESC';
   orderBy?: string;
+  sort?: string;
 }) {
   if (tableId.indexOf('relation_') === 0) {
     const {
@@ -166,8 +168,9 @@ async function getRecordsByOffset({
       order,
     });
   }
+  const sortQuery = sort ? `&sort=${encodeURIComponent(sort)}` : '';
   const response = await callApi.get(
-    `/record?tableId=${tableId}&limit=${limit}&offset=${offset}&filter=${filter}&order=${order}&orderBy=${orderBy}`
+    `/record?tableId=${tableId}&limit=${limit}&offset=${offset}&filter=${filter}&order=${order}&orderBy=${orderBy}${sortQuery}`
   );
   if (response.status !== 200) {
     throw new Error('Error get table records');

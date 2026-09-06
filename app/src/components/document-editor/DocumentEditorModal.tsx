@@ -46,6 +46,7 @@ import {
   LucideAlignRight,
   LucideTrash2,
   LucideMoreVertical,
+  LucideChevronDown,
 } from 'lucide-react';
 import { TableIcon, availableTableIcons } from '@/components/table-icon/TableIcon';
 import { cn } from '@/lib/utils';
@@ -244,7 +245,14 @@ function createMentionSuggestionProps(tableFields: Field[]) {
   };
 }
 
-/** Floating toolbar: font, size, B/I/U, alignment only. Rendered centered in its parent. */
+const TITLEBAR_CHROME =
+  'dadix-app-titlebar z-50 flex h-11 min-h-11 w-full items-stretch border-b bg-background';
+const TITLEBAR_TAB =
+  'group/doc-tab inline-flex h-full w-auto shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-none border-0 border-r border-border bg-transparent px-3 text-sm font-medium text-foreground shadow-none hover:bg-foreground/6';
+const TITLEBAR_CELL =
+  'size-auto h-full min-h-11 w-11 shrink-0 rounded-none border-0 border-l border-border bg-transparent shadow-none hover:bg-foreground/6';
+
+/** Titlebar formatting controls: font, size, B/I/U, alignment. */
 function DocumentToolbar({ editor }: { editor: Editor | null }) {
   const [, setSelectionUpdate] = React.useState(0);
   React.useEffect(() => {
@@ -263,7 +271,7 @@ function DocumentToolbar({ editor }: { editor: Editor | null }) {
   const fontValue = fontFamily && FONT_OPTIONS.some((f) => f.value === fontFamily) ? fontFamily : (FONT_OPTIONS[0]?.value ?? 'Arial');
   const sizeValue = fontSize && FONT_SIZE_OPTIONS.some((f) => f.value === fontSize) ? fontSize : FONT_SIZE_OPTIONS[0]?.value ?? '14px';
   return (
-    <div className='flex flex-wrap items-center justify-center gap-1'>
+    <div className='flex h-full flex-nowrap items-center justify-center gap-0.5'>
       <Select
         value={fontValue}
         onValueChange={(v) =>
@@ -272,7 +280,7 @@ function DocumentToolbar({ editor }: { editor: Editor | null }) {
             : editor.chain().focus().unsetFontFamily().run()
         }
       >
-        <SelectTrigger className='h-8 w-[130px]'>
+        <SelectTrigger className='h-8 w-[120px] border-0 bg-transparent shadow-none'>
           <SelectValue placeholder='Font' />
         </SelectTrigger>
         <SelectContent>
@@ -291,7 +299,7 @@ function DocumentToolbar({ editor }: { editor: Editor | null }) {
             : editor.chain().focus().unsetFontSize().run()
         }
       >
-        <SelectTrigger className='h-8 w-[70px]'>
+        <SelectTrigger className='h-8 w-[64px] border-0 bg-transparent shadow-none'>
           <SelectValue placeholder='Size' />
         </SelectTrigger>
         <SelectContent>
@@ -789,17 +797,25 @@ export function DocumentEditorScreen({
 
   if (showEmptyState) {
     return (
-      <div className='relative flex flex-col flex-1 min-h-0 bg-muted/50' style={{ backgroundColor: '#F3F4F6' }}>
-        <div className='absolute top-0 left-0 right-0 z-30 flex items-center justify-between p-4'>
-          <div className='flex items-center gap-2'>
-            {onClose && (
-              <Button type='button' size='icon' variant='outline' className='shrink-0' onClick={onClose}>
-                <LucideX className='size-4' />
-              </Button>
-            )}
-          </div>
-        </div>
-        <div className='flex-1 flex flex-col justify-center items-center min-h-0 overflow-y-auto p-6 pt-20'>
+      <div className='flex h-full min-h-0 flex-1 flex-col bg-muted/50' style={{ backgroundColor: '#F3F4F6' }}>
+        <header className={TITLEBAR_CHROME} data-tauri-drag-region>
+          <span className='dadix-traffic-close' aria-hidden />
+          {onClose && (
+            <Button
+              type='button'
+              variant='ghost'
+              size='icon'
+              className={`${TITLEBAR_CELL} border-l-0 border-r`}
+              aria-label='Close'
+              onClick={onClose}
+            >
+              <LucideX className='size-4' />
+            </Button>
+          )}
+          <div className='dadix-titlebar-drag h-full min-w-8 flex-1' data-tauri-drag-region />
+          <div id='dadix-window-controls-slot' className='flex h-full items-stretch' />
+        </header>
+        <div className='flex-1 flex flex-col justify-center items-center min-h-0 overflow-y-auto p-6'>
           <Button
             type='button'
             variant='outline'
@@ -830,52 +846,73 @@ export function DocumentEditorScreen({
   const canDelete = Boolean(currentDoc);
 
   return (
-    <div className='relative flex flex-col flex-1 min-h-0 bg-muted/50' style={{ backgroundColor: '#F3F4F6' }}>
-      {/* One line: X + Dropdown (left) | Pill same height (center) | MoreVertical (right). No bar. */}
-      <div className='absolute top-0 left-0 right-0 z-30 flex items-center justify-between p-4'>
-        <div className='flex items-center gap-2'>
-          {onClose && (
-            <Button type='button' size='icon' variant='outline' className='shrink-0' onClick={onClose}>
-              <LucideX className='size-4' />
-            </Button>
-          )}
-          <Select
-            value={currentTemplateId ?? '__new__'}
-            onValueChange={(v) => {
-              if (v === '__new__') {
+    <div className='flex h-full min-h-0 flex-1 flex-col bg-muted/50' style={{ backgroundColor: '#F3F4F6' }}>
+      <header className={TITLEBAR_CHROME} data-tauri-drag-region>
+        <span className='dadix-traffic-close' aria-hidden />
+        {onClose && (
+          <Button
+            type='button'
+            variant='ghost'
+            size='icon'
+            className={`${TITLEBAR_CELL} border-l-0 border-r`}
+            aria-label='Close'
+            onClick={onClose}
+          >
+            <LucideX className='size-4' />
+          </Button>
+        )}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button type='button' className={TITLEBAR_TAB}>
+              <DocumentIconByName
+                name={currentDoc?.icon ?? availableTableIcons[0]}
+                className='size-4 shrink-0'
+              />
+              <span className='max-w-[12rem] truncate'>
+                {currentDoc?.name || 'Document'}
+              </span>
+              <LucideChevronDown className='size-4 shrink-0 opacity-70' />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align='start' className='min-w-46'>
+            <DropdownMenuItem
+              onClick={() => {
                 setCurrentTemplateId('__new__');
                 setCreateDialogOpen(true);
-              } else {
-                setCurrentTemplateId(v);
-                setCreateDialogOpen(false);
-              }
-            }}
-          >
-            <SelectTrigger className='flex items-center gap-2 w-auto min-w-[160px] bg-white border shadow-sm'>
-              <SelectValue placeholder='Select document…' />
-            </SelectTrigger>
-            <SelectContent>
-<SelectItem value='__new__'>
-                  <TableIcon name={availableTableIcons[0]} className='size-4 shrink-0' />
-                  <span>— New document —</span>
-                </SelectItem>
-              {templates.map((t) => (
-                <SelectItem key={t.id} value={t.id}>
-                  <DocumentIconByName name={t.icon ?? availableTableIcons[0]} className='size-4 shrink-0' />
-                  <span>{t.name}</span>
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div className='absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 flex items-center'>
-          <div className='rounded-full border bg-white shadow-xl px-4 py-2 inline-flex items-center gap-1'>
-            <DocumentToolbar editor={editor} />
-          </div>
+              }}
+            >
+              <TableIcon name={availableTableIcons[0]} className='size-4 shrink-0' />
+              <span>New document</span>
+            </DropdownMenuItem>
+            {templates.map((t) => (
+              <DropdownMenuItem
+                key={t.id}
+                onClick={() => {
+                  setCurrentTemplateId(t.id);
+                  setCreateDialogOpen(false);
+                }}
+              >
+                <DocumentIconByName
+                  name={t.icon ?? availableTableIcons[0]}
+                  className='size-4 shrink-0'
+                />
+                <span>{t.name}</span>
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+        <div className='dadix-titlebar-drag h-full min-w-4 flex-1' data-tauri-drag-region />
+        <div className='flex h-full min-w-0 items-stretch overflow-x-auto'>
+          <DocumentToolbar editor={editor} />
         </div>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant='outline' size='icon' aria-label='Document options'>
+            <Button
+              variant='ghost'
+              size='icon'
+              className={TITLEBAR_CELL}
+              aria-label='Document options'
+            >
               <LucideMoreVertical className='size-4' />
             </Button>
           </DropdownMenuTrigger>
@@ -907,10 +944,10 @@ export function DocumentEditorScreen({
             )}
           </DropdownMenuContent>
         </DropdownMenu>
-      </div>
+        <div id='dadix-window-controls-slot' className='flex h-full items-stretch' />
+      </header>
 
-      {/* Scrollable gray area; A4 sheet: 210mm × 297mm portrait, shadow-2xl */}
-      <div className='flex-1 min-h-0 overflow-y-auto pt-16'>
+      <div className='flex-1 min-h-0 overflow-y-auto'>
         <div
           className='document-page mx-auto bg-white my-12 shadow-2xl'
           style={{

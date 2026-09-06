@@ -23,7 +23,7 @@ export default function DashboardLayout({
           '--header-height': 'calc(var(--spacing) * 12)',
         } as React.CSSProperties
       }
-      className='h-full'
+      className='h-full min-h-0 flex-1'
     >
       <Suspense>
         <TableStyleProvider>

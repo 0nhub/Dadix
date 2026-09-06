@@ -1,5 +1,6 @@
 import { availableDadixFieldsDataTypes } from '@/constants';
 import { validateDadixCode } from '@/lib/dadixCodeEval';
+import { fileFieldDisplayName } from '@/lib/fileField';
 import type {
   Field,
   IDadixGridViewField,
@@ -45,6 +46,7 @@ export function filtersToString(
         switch (field.type) {
           case 'TEXT':
           case 'CHOICE':
+          case 'FILE':
             // handle string value
             if (filter.operation === 'in') {
               filterOperation = `${filter.operation}(${field.name},${filter.value})`;
@@ -105,7 +107,7 @@ export function filtersToString(
 export function viewFieldToTableField(field: IDadixGridViewField): Field {
   return {
     id: field.fieldId,
-    name: field.fieldName,
+    name: field.fieldName || field.name,
     isVisible: field.isVisible,
     order: field.fieldOrder,
     size: field.size,
@@ -354,14 +356,16 @@ export function sortRecordsByRule(
   sortingRules: ISortingRules,
   viewFields: { fieldId: number; fieldName?: string; name?: string; type?: string }[]
 ): Record<string, unknown>[] {
-  const rule = Array.isArray(sortingRules) ? sortingRules[0] : undefined;
-  if (!rule?.fieldId || !rule?.direction || !viewFields?.length) return records;
-  const sortField = viewFields.find((f) => f.fieldId === rule.fieldId);
-  const fieldName = sortField?.fieldName ?? sortField?.name ?? 'id';
-  const fieldType = (sortField?.type ?? 'TEXT').toUpperCase();
-  const dir = rule.direction === 'DESC' ? -1 : 1;
+  const rules = (Array.isArray(sortingRules) ? sortingRules : []).filter(
+    (rule) => rule?.fieldId != null && (rule.direction === 'ASC' || rule.direction === 'DESC')
+  );
+  if (!rules.length || !viewFields?.length) return records;
 
-  return [...records].sort((a, b) => {
+  const compare = (a: Record<string, unknown>, b: Record<string, unknown>, rule: (typeof rules)[number]) => {
+    const sortField = viewFields.find((f) => Number(f.fieldId) === Number(rule.fieldId));
+    const fieldName = sortField?.fieldName ?? sortField?.name ?? 'id';
+    const fieldType = (sortField?.type ?? 'TEXT').toUpperCase();
+    const dir = rule.direction === 'DESC' ? -1 : 1;
     let aVal: number | string = a[fieldName] as number | string;
     let bVal: number | string = b[fieldName] as number | string;
     if (fieldType === 'DATE') {
@@ -370,13 +374,26 @@ export function sortRecordsByRule(
       return ((aVal as number) - (bVal as number)) * dir;
     }
     if (fieldType === 'INTEGER' || fieldType === 'SERIAL') {
-      aVal = Number(aVal) ?? 0;
-      bVal = Number(bVal) ?? 0;
+      aVal = Number(aVal) || 0;
+      bVal = Number(bVal) || 0;
       return ((aVal as number) - (bVal as number)) * dir;
+    }
+    if (fieldType === 'FILE') {
+      aVal = fileFieldDisplayName(a[fieldName]);
+      bVal = fileFieldDisplayName(b[fieldName]);
+      return (aVal as string).localeCompare(bVal as string, undefined, { numeric: true }) * dir;
     }
     aVal = aVal != null ? String(aVal) : '';
     bVal = bVal != null ? String(bVal) : '';
     return (aVal as string).localeCompare(bVal as string, undefined, { numeric: true }) * dir;
+  };
+
+  return [...records].sort((a, b) => {
+    for (const rule of rules) {
+      const result = compare(a, b, rule);
+      if (result !== 0) return result;
+    }
+    return 0;
   });
 }
 
@@ -509,7 +526,7 @@ export function getDefaultRecordData(fields: Field[]): Record<string, unknown> {
   if (!fields?.length) return out;
   const today = new Date().toISOString().split('T')[0];
   for (const field of fields) {
-    if (field.type === 'AI') continue;
+    if (field.type === 'AI' || field.type === 'FILE') continue;
     const dv = field.defaultValue;
     if (dv === undefined || dv === '') continue;
     if (field.type === 'DATE' && dv === 'TODAY') {

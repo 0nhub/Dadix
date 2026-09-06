@@ -11,7 +11,8 @@ export type DadixFieldDataTypes =
   | 'FORMULA'
   | 'CODE'
   | 'RELATION'
-  | 'AI';
+  | 'AI'
+  | 'FILE';
 
 /** Output type for AI field results. */
 export type AIFieldOutputType = 'TEXT' | 'INTEGER' | 'DATE' | 'BOOLEAN';
@@ -23,6 +24,8 @@ export interface AIFieldOptions {
   apiKeyId: string;
 }
 
+export type TableSourceKind = 'local' | 'linked_file' | 'external_database';
+
 export interface Table {
   id: number | string; // Accept UUID (string) or numeric IDs
   name: string;
@@ -33,6 +36,10 @@ export interface Table {
   fields?: Field[];
   createdAt: string;
   updatedAt: string;
+  /** Desktop adapter: where the table's data lives. Not a column type. */
+  sourceKind?: TableSourceKind;
+  sourceId?: number;
+  defaultViewId?: number | string;
 }
 
 /** For CHOICE fields: single = one option, multi = multiple options (checkboxes in dropdown). */

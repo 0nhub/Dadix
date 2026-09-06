@@ -13,19 +13,23 @@ import { LoadingIndicator } from '@/components/loading-indicator/LoadingIndicato
 import { deleteView } from '@/lib/view';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { UserLocalStorage } from '@/lib/userLocalStorage';
+import { useCurrentProjectContext } from '@/context/CurrentProjectContext';
+import { projectTableHref } from '@/lib/projectHref';
 
 const OPEN_DELETE_VIEW_CONFIRM_DIALOG_EVENT =
   'dadix--open-delete-view-confirm-dialog-event';
 
 function DeleteViewConfirmDialog() {
   const searchParams = useSearchParams();
+  const router = useRouter();
+  const currentProjectCtx = useCurrentProjectContext();
   const [isOpen, setIsOpen] = useState<boolean>(false);
   const [isDeleting, setIsDeleting] = useState<boolean>(false);
   const [view, setView] = useState<IDadixView | undefined>(undefined);
   const viewRef = useRef<IDadixView | undefined>(undefined);
-  const tableIdRef = useRef<IDadixView | undefined>(undefined);
+  const tableIdRef = useRef<string | number | undefined>(undefined);
 
   useEffect(() => {
     window.addEventListener(
@@ -59,14 +63,19 @@ function DeleteViewConfirmDialog() {
         setIsDeleting(false);
         setIsOpen(false);
         if (`${searchParams.get('viewId')}` === `${viewRef.current?.id}`) {
-          document.location.href = `${document.location.pathname}?tableId=${searchParams.get('tableId')}`;
+          router.replace(
+            projectTableHref(
+              currentProjectCtx.id,
+              searchParams.get('tableId') ?? tableIdRef.current
+            )
+          );
         }
         return res;
       })
       .catch((err) => {
         setIsDeleting(false);
         console.error('Error deleting view:', err);
-        toast.error('Error deleting view');
+        toast.error(err instanceof Error ? err.message : 'Error deleting view');
       });
   };
 

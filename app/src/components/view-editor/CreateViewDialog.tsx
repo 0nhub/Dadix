@@ -19,6 +19,9 @@ import { LucideX } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { createView } from '@/lib/view';
 import { toast } from 'sonner';
+import { useCurrentProjectContext } from '@/context/CurrentProjectContext';
+import { projectTableHref } from '@/lib/projectHref';
+import { useLanguage } from '@/context/LanguageContext';
 
 const OPEN_CREATE_NEW_VIEW_DIALOG_EVENT =
   'dadix-events-open-create-new-view-dialog';
@@ -34,6 +37,8 @@ function CreateViewDialog() {
 
   const searchParams = useSearchParams();
   const router = useRouter();
+  const currentProjectCtx = useCurrentProjectContext();
+  const { t } = useLanguage();
 
   const [isOpen, setIsOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -103,7 +108,11 @@ function CreateViewDialog() {
           }
           toast.success('View created successfully!');
           router.push(
-            `${document.location.pathname}?tableId=${currentTableIdRef.current}&viewId=${createdViewId}`
+            projectTableHref(
+              currentProjectCtx.id,
+              currentTableIdRef.current,
+              createdViewId as string | number
+            )
           );
 
           // Reset form and close dialog
@@ -119,13 +128,13 @@ function CreateViewDialog() {
         const status = (err as { response?: { status?: number } })?.response?.status;
         const msg = (err as { response?: { data?: { message?: string } }; message?: string })?.response?.data?.message
           ?? (err as Error)?.message
-          ?? 'View konnte nicht erstellt werden.';
+          ?? t('table.viewCreateFailed');
         if (status === 401) {
-          toast.error('Nicht angemeldet', {
-            description: 'Bitte melde dich erneut an und versuche es nochmal.',
+          toast.error(t('table.notSignedIn'), {
+            description: t('table.signInAgain'),
           });
         } else {
-          toast.error('Fehler', { description: msg });
+          toast.error(t('table.error'), { description: msg });
         }
       });
   };

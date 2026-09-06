@@ -10,6 +10,7 @@ import {
   LucideType,
   LucideCurlyBraces,
   LucideBot,
+  LucideImage,
 } from 'lucide-react';
 
 import type { LucideProps } from 'lucide-react';
@@ -35,6 +36,7 @@ const Icons: Record<
   FORMULA: LucideCode,
   CODE: LucideCurlyBraces,
   AI: LucideBot,
+  FILE: LucideImage,
   VIEW_BUTTON: LucideMousePointerClick,
 };
 

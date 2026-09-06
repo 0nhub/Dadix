@@ -1,14 +1,14 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { useParams, usePathname, useRouter } from 'next/navigation';
+import { useParams, usePathname } from 'next/navigation';
 
 import { Button } from '@/components/ui/button';
 import Link from 'next/link';
 // import { Separator } from "@/components/ui/separator";
 import { SidebarTrigger, useSidebar } from '@/components/ui/sidebar';
 import {
-  LucideEllipsis,
+  LucideMoreVertical,
   LucidePlus,
   LucideLifeBuoy,
   LucideLogOut,
@@ -21,13 +21,10 @@ import {
   LucideChevronUp,
   LucideChevronDown,
   LucideX,
-  LucideDownload,
-  LucideFileJson,
-  LucideFileSpreadsheet,
+  LucideArrowLeftRight,
   LucideFileText,
   LucideShare2,
   LucideKey,
-  LucideUpload,
   LucideLayoutList,
 } from 'lucide-react';
 
@@ -37,11 +34,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
   DropdownMenuSeparator,
-  DropdownMenuSub,
-  DropdownMenuSubContent,
-  DropdownMenuSubTrigger,
 } from '@/components/ui/dropdown-menu';
-import { TableIcon } from '@/components/table-icon/TableIcon';
 import { CurrentTableViewsSwitch } from '@/components/views-switch/ViewsSwitch';
 // import { LoadingIndicator } from '@/components/loading-indicator/LoadingIndicator';
 
@@ -50,9 +43,9 @@ import { useCurrentProjectContext } from '@/context/CurrentProjectContext';
 import { useTableContext } from '@/context/TableContext';
 import { useRequireRole } from '@/hooks/useRequireRole';
 import { dadixEvents } from '@/constants/events';
-import recordControllers, { getAllRecordsForExport } from '@/lib/record';
+import { useEventHandler } from '@/hooks/useEventHandler';
+import recordControllers from '@/lib/record';
 import { getDefaultRecordData } from '@/lib/utils';
-import { exportToCSV, exportToJSON, exportToExcel } from '@/lib/exportTable';
 import { toast } from 'sonner';
 import { openTableRecord } from '@/components/table-cell-viewer';
 import { openAPIConfigDialog } from '@/components/api-config-dialog/APIConfigDialog';
@@ -80,7 +73,6 @@ export function SiteHeader({
   setIsSearchActive,
 }: SiteHeaderProps) {
   const currentTableCtx = useTableContext();
-  const router = useRouter();
   const { open, state } = useSidebar();
   const pathname = usePathname();
   const { projectId } = useParams();
@@ -93,14 +85,17 @@ export function SiteHeader({
 
   // Get the current table name from the selected table or context
   const authCtx = useAuthContext();
-  const displayTableName = currentTableCtx.table?.name;
-
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const [isDesktopShell, setIsDesktopShell] = useState(false);
   const dropdownTriggerRef = useRef<HTMLButtonElement>(null);
 
   const { canEditRecords, canEditTables } = useRequireRole();
   const findCtx = useFindInViewOptional();
   const [findInputValue, setFindInputValue] = useState('');
+
+  useEffect(() => {
+    setIsDesktopShell(Boolean(document.documentElement.dataset.dadixOs));
+  }, []);
 
   useEffect(() => {
     if (findCtx && findCtx.findQuery === '') setFindInputValue('');
@@ -109,6 +104,14 @@ export function SiteHeader({
   useEffect(() => {
     if (!isSearchActive && findCtx) setFindInputValue('');
   }, [isSearchActive, findCtx]);
+
+  useEventHandler(
+    dadixEvents.gridViewEvents.openFindInView,
+    () => {
+      setIsSearchActive(true);
+    },
+    [setIsSearchActive]
+  );
 
   useEffect(() => {
     window.addEventListener(
@@ -143,26 +146,38 @@ export function SiteHeader({
     );
   };
 
+  const chromeCell =
+    'size-auto h-full min-h-11 w-11 shrink-0 rounded-none border-0 border-l border-border bg-transparent shadow-none hover:bg-foreground/6';
+  const searchNavBtn =
+    'size-auto h-full w-8 shrink-0 rounded-none border-0 bg-transparent shadow-none hover:bg-foreground/6';
+
   return (
     <header
-      className='group/header bg-background/95 supports-backdrop-filter:bg-background flex items-center gap-2 backdrop-blur'
+      className='dadix-app-titlebar group/header z-50 flex h-11 min-h-11 w-full items-stretch border-b bg-background'
       data-sidebar-state={state}
       data-sidebar-open={open}
+      data-tauri-drag-region
     >
-      <div className='flex w-full justify-between items-center gap-2 px-4 py-1.5 h-12 min-h-12'>
-        {!hideSidebar && <SidebarTrigger />}
+      <div className='dadix-titlebar-drag flex h-full w-full min-w-0 items-stretch'>
+        {!hideSidebar && (
+          <>
+            <span className='dadix-traffic-close' aria-hidden />
+            <SidebarTrigger className={`${chromeCell} border-l-0 border-r`} />
+          </>
+        )}
 
-        <div className='flex items-center gap-2 py-1.5 min-h-10 h-10 min-w-0 flex-1 overflow-auto scrollbar-thin'>
-          <div className='flex flex-row flex-nowrap gap-2 min-w-0 shrink'>
+        <div className='flex h-full min-w-0 items-center overflow-x-auto overflow-y-hidden scrollbar-thin'>
             {selectedRecords.recordsIds.length > 0 ? (
-              <>
-                <Button variant='outline' onClick={clearRecordsSelection}>
+              <div className='flex h-full items-stretch'>
+                <Button variant='ghost' size='sm' className='h-full rounded-none border-r' onClick={clearRecordsSelection}>
                   <LucideFan />
                   Clear selection
                 </Button>
                 {canEditRecords && (
                   <Button
-                    variant='delete'
+                    variant='ghost'
+                    size='sm'
+                    className='h-full rounded-none border-r text-destructive hover:bg-destructive/10'
                     onClick={() => {
                       setIsDeletingRecords(true);
                       recordControllers
@@ -186,79 +201,49 @@ export function SiteHeader({
                         });
                     }}
                   >
-                    {/*{isDeletingRecords ? (
-                      <LoadingIndicator
-                        visibilityDelay={false}
-                        className='size-6'
-                      />
-                    ) : (
-                      <LucideTrash2 />
-                    )}*/}
                     <LucideTrash2 />
                     Delete
                   </Button>
                 )}
-              </>
+              </div>
             ) : (
-              <>
-                {currentTableCtx.initialized && (
-                  <>
-                    <h1 className='text-base font-medium group-data-[sidebar-open=true]/header:hidden min-w-0 max-w-full'>
-                      {currentTableCtx.table && (
-                        <Link
-                          href={`/dashboard/${projectId}/edit-table?tableId=${currentTableCtx.id}`}
-                          className='inline-block min-w-0 max-w-full'
-                        >
-                          <Button variant='outline' className='min-w-0 max-w-full overflow-hidden'>
-                            <TableIcon
-                              name={currentTableCtx.table.icon}
-                              width={18}
-                              className='shrink-0'
-                            />
-                            <span className='truncate block min-w-0'>{displayTableName}</span>
-                          </Button>
-                        </Link>
-                      )}
-                    </h1>
-                    {currentTableCtx.id && !isNoTablesRoute && (
-                      <CurrentTableViewsSwitch />
-                    )}
-                  </>
-                )}
-              </>
+              currentTableCtx.initialized &&
+              currentTableCtx.id &&
+              !isNoTablesRoute && <CurrentTableViewsSwitch />
             )}
-          </div>
-          <div className='flex items-center gap-2 ml-auto shrink-0 flex-shrink-0'>
+        </div>
+        <div className='dadix-titlebar-drag h-full min-w-8 flex-1' data-tauri-drag-region />
+        <div className='flex h-full items-stretch'>
             {currentTableCtx.initialized &&
               currentTableCtx.id &&
               !isNoTablesRoute && (
                 <>
                   {isSearchActive && findCtx ? (
-                    <div className='flex items-center gap-2 rounded-md border bg-background pl-2 pr-1.5 py-1 shadow-sm h-9 min-w-0 shrink-0 overflow-visible'>
+                    <div className='flex h-full items-stretch border-l border-border bg-background'>
                       <Input
                         type='text'
-                        placeholder='Find'
+                        placeholder='Search'
                         value={findInputValue}
                         onChange={(e) => {
                           const v = e.target.value;
                           setFindInputValue(v);
                           findCtx.setFindQuery(v);
                         }}
-                        className='h-7 w-32 min-w-[7rem] max-w-[8rem] border-0 bg-transparent px-1 py-0.5 text-sm shadow-none focus-visible:ring-0 flex-shrink-0'
-                        aria-label='Find in table'
+                        className='h-full w-32 min-w-[7rem] max-w-[8rem] rounded-none border-0 bg-transparent px-2.5 text-sm shadow-none focus-visible:ring-0'
+                        aria-label='Search in table'
                       />
-                      <span className='text-muted-foreground text-xs tabular-nums w-12 shrink-0 text-right'>
+                      <span className='text-muted-foreground flex h-full w-10 shrink-0 items-center justify-end pr-1 text-xs tabular-nums'>
                         {findCtx.matchCount === 0 && findCtx.findQuery
                           ? '0'
                           : findCtx.matchCount > 0
                             ? `${findCtx.currentMatchIndex + 1}/${findCtx.matchCount}`
                             : ''}
                       </span>
-                      <div className='flex items-center shrink-0'>
+                      <div className='ml-auto flex h-full items-stretch'>
                         <Button
                           variant='ghost'
                           size='icon'
-                          className='size-8 shrink-0'
+                          className={searchNavBtn}
                           onClick={() => findCtx.onPrevRef.current?.()}
                           disabled={findCtx.matchCount === 0}
                           aria-label='Previous match'
@@ -268,7 +253,7 @@ export function SiteHeader({
                         <Button
                           variant='ghost'
                           size='icon'
-                          className='size-8 shrink-0'
+                          className={searchNavBtn}
                           onClick={() => findCtx.onNextRef.current?.()}
                           disabled={findCtx.matchCount === 0}
                           aria-label='Next match'
@@ -278,7 +263,7 @@ export function SiteHeader({
                         <Button
                           variant='ghost'
                           size='icon'
-                          className='size-8 shrink-0'
+                          className={chromeCell}
                           onClick={() => {
                             findCtx.setFindQuery('');
                             setIsSearchActive(false);
@@ -292,8 +277,9 @@ export function SiteHeader({
                     </div>
                   ) : (
                     <Button
-                      variant='outline'
+                      variant='ghost'
                       size='icon'
+                      className={chromeCell}
                       onClick={() => setIsSearchActive(true)}
                       title='Search'
                       aria-label='Search'
@@ -303,7 +289,9 @@ export function SiteHeader({
                   )}
                   <Button
                     size='icon'
-                    variant='outline'
+                    variant='ghost'
+                    className={chromeCell}
+                    aria-label='Filter'
                     onClick={() => {
                       openGlobalFilter({
                         filters: currentTableCtx.filters,
@@ -316,20 +304,18 @@ export function SiteHeader({
                   </Button>
                 </>
               )}
-          </div>
-        </div>
-
-        <DropdownMenu open={isDropdownOpen} onOpenChange={setIsDropdownOpen}>
-          <DropdownMenuTrigger asChild ref={dropdownTriggerRef}>
-            <Button
-              variant='outline'
-              className='data-[state=open]:bg-muted data-[state=open]:text-muted-foreground size-9'
-              size='icon'
-            >
-              <LucideEllipsis />
-              <span className='sr-only'>Open menu</span>
-            </Button>
-          </DropdownMenuTrigger>
+            <DropdownMenu open={isDropdownOpen} onOpenChange={setIsDropdownOpen}>
+              <DropdownMenuTrigger asChild ref={dropdownTriggerRef}>
+                <Button
+                  variant='ghost'
+                  className={`${chromeCell} data-[state=open]:bg-foreground/6`}
+                  size='icon'
+                  aria-label='Menu'
+                >
+                  <LucideMoreVertical />
+                  <span className='sr-only'>Menu</span>
+                </Button>
+              </DropdownMenuTrigger>
           <DropdownMenuContent align='end' className='w-48 z-999'>
             {/* {currentTable && (
                 <Link href={`/edit-table/${getTableSlug(currentTable)}`}>
@@ -356,104 +342,9 @@ export function SiteHeader({
                   openTableUploadDialog();
                 }}
               >
-                <LucideUpload className='size-4' />
-                <span>Upload CSV</span>
+                <LucideArrowLeftRight className='size-4' />
+                <span>Exchange</span>
               </DropdownMenuItem>
-            )}
-            {currentTableCtx.initialized && currentTableCtx.id && (
-              <DropdownMenuSub>
-                <DropdownMenuSubTrigger>
-                  <LucideDownload className='size-4' />
-                  <span>Download</span>
-                </DropdownMenuSubTrigger>
-                <DropdownMenuSubContent className='w-48'>
-                  <DropdownMenuItem
-                    onClick={async () => {
-                      try {
-                        const records = await getAllRecordsForExport(currentTableCtx.id!);
-                        exportToCSV(records, currentTableCtx.table?.fields, currentTableCtx.table?.name ?? 'Table');
-                      } catch (e) {
-                        console.error(e);
-                        toast.error('Export failed');
-                      }
-                    }}
-                  >
-                    <LucideFileText className='size-4' />
-                    Current view CSV
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onClick={async () => {
-                      try {
-                        const records = await getAllRecordsForExport(currentTableCtx.id!);
-                        exportToJSON(records, currentTableCtx.table?.name ?? 'Table');
-                      } catch (e) {
-                        console.error(e);
-                        toast.error('Export failed');
-                      }
-                    }}
-                  >
-                    <LucideFileJson className='size-4' />
-                    Current view JSON
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onClick={async () => {
-                      try {
-                        const records = await getAllRecordsForExport(currentTableCtx.id!);
-                        exportToExcel(records, currentTableCtx.table?.fields, currentTableCtx.table?.name ?? 'Table');
-                      } catch (e) {
-                        console.error(e);
-                        toast.error('Export failed');
-                      }
-                    }}
-                  >
-                    <LucideFileSpreadsheet className='size-4' />
-                    Current view Excel
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem
-                    onClick={async () => {
-                      try {
-                        const records = await getAllRecordsForExport(currentTableCtx.id!);
-                        exportToCSV(records, currentTableCtx.table?.fields, currentTableCtx.table?.name ?? 'Table');
-                      } catch (e) {
-                        console.error(e);
-                        toast.error('Export failed');
-                      }
-                    }}
-                  >
-                    <LucideFileText className='size-4' />
-                    All CSV
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onClick={async () => {
-                      try {
-                        const records = await getAllRecordsForExport(currentTableCtx.id!);
-                        exportToJSON(records, currentTableCtx.table?.name ?? 'Table');
-                      } catch (e) {
-                        console.error(e);
-                        toast.error('Export failed');
-                      }
-                    }}
-                  >
-                    <LucideFileJson className='size-4' />
-                    All JSON
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onClick={async () => {
-                      try {
-                        const records = await getAllRecordsForExport(currentTableCtx.id!);
-                        exportToExcel(records, currentTableCtx.table?.fields, currentTableCtx.table?.name ?? 'Table');
-                      } catch (e) {
-                        console.error(e);
-                        toast.error('Export failed');
-                      }
-                    }}
-                  >
-                    <LucideFileSpreadsheet className='size-4' />
-                    All Excel
-                  </DropdownMenuItem>
-                </DropdownMenuSubContent>
-              </DropdownMenuSub>
             )}
             {currentTableCtx.initialized && currentTableCtx.id && projectId && (
               <DropdownMenuItem
@@ -471,7 +362,7 @@ export function SiteHeader({
                 <span>Documents</span>
               </DropdownMenuItem>
             )}
-            {currentTableCtx.initialized && currentTableCtx.id && (
+            {!isDesktopShell && currentTableCtx.initialized && currentTableCtx.id && (
               <DropdownMenuItem
                 onClick={() => {
                   setIsDropdownOpen(false);
@@ -482,7 +373,7 @@ export function SiteHeader({
                 <span>Webform</span>
               </DropdownMenuItem>
             )}
-            {currentTableCtx.initialized && currentTableCtx.id && (
+            {!isDesktopShell && currentTableCtx.initialized && currentTableCtx.id && (
               <DropdownMenuItem
                 onClick={() => {
                   setIsDropdownOpen(false);
@@ -493,27 +384,27 @@ export function SiteHeader({
                 <span>Share</span>
               </DropdownMenuItem>
             )}
-            {canEditTables && selectedTableId && (
-              <>
-                <DropdownMenuItem
-                  onClick={() => {
-                    setIsDropdownOpen(false);
-                    openAPIConfigDialog();
-                  }}
-                >
-                  <LucideWebhook />
-                  API
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={() => {
-                    setIsDropdownOpen(false);
-                    openApiKeysDialog();
-                  }}
-                >
-                  <LucideKey />
-                  AI API Keys
-                </DropdownMenuItem>
-              </>
+            {!isDesktopShell && canEditTables && selectedTableId && (
+              <DropdownMenuItem
+                onClick={() => {
+                  setIsDropdownOpen(false);
+                  openAPIConfigDialog();
+                }}
+              >
+                <LucideWebhook />
+                API
+              </DropdownMenuItem>
+            )}
+            {!isDesktopShell && canEditTables && selectedTableId && (
+              <DropdownMenuItem
+                onClick={() => {
+                  setIsDropdownOpen(false);
+                  openApiKeysDialog();
+                }}
+              >
+                <LucideKey />
+                AI Keys
+              </DropdownMenuItem>
             )}
             <Link href='https://www.fillfields.com/IFemv9' target='_blank'>
               <DropdownMenuItem>
@@ -528,6 +419,8 @@ export function SiteHeader({
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
+            <div id='dadix-window-controls-slot' className='flex h-full items-stretch' />
+          </div>
       </div>
     </header>
   );

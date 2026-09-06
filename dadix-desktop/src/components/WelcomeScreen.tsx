@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { open, save } from "@tauri-apps/plugin-dialog";
-import { createProject, openProject } from "../lib/dadix";
+import { createProject, openDemoProject, openProject } from "../lib/dadix";
 import type { ProjectMeta } from "../types";
-import "./WelcomeScreen.css";
+import { Button } from "./ui/button";
 
 interface WelcomeScreenProps {
   onOpen: (meta: ProjectMeta) => void;
@@ -12,37 +12,11 @@ export function WelcomeScreen({ onOpen }: WelcomeScreenProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function handleOpen() {
+  async function run(action: () => Promise<void>) {
     setError(null);
     setLoading(true);
     try {
-      const selected = await open({
-        multiple: false,
-        filters: [{ name: "Dadix Project", extensions: ["dadix"] }],
-      });
-      if (typeof selected === "string") {
-        const meta = await openProject(selected);
-        onOpen(meta);
-      }
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function handleCreate() {
-    setError(null);
-    setLoading(true);
-    try {
-      const path = await save({
-        defaultPath: "Unnamed.dadix",
-        filters: [{ name: "Dadix Project", extensions: ["dadix"] }],
-      });
-      if (path) {
-        const meta = await createProject(path);
-        onOpen(meta);
-      }
+      await action();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -51,29 +25,62 @@ export function WelcomeScreen({ onOpen }: WelcomeScreenProps) {
   }
 
   return (
-    <div className="welcome">
-      <div className="welcome-card">
-        <h1>Dadix</h1>
-        <p className="welcome-subtitle">Local-first project file</p>
-        <div className="welcome-actions">
-          <button
-            type="button"
-            className="welcome-btn primary"
-            onClick={handleOpen}
+    <div className="flex h-full items-center justify-center bg-sidebar p-6">
+      <div className="w-full max-w-md rounded-xl border bg-card p-8 shadow-sm">
+        <p className="text-xs uppercase tracking-wide text-muted-foreground">
+          Lokale Datei
+        </p>
+        <h1 className="mt-1 text-3xl font-semibold">Dadix</h1>
+        <p className="mt-3 text-sm text-muted-foreground">
+          Testprojekt mit <strong className="text-foreground">Kunden</strong> und{" "}
+          <strong className="text-foreground">Bestellungen</strong>. Felder
+          anlegen, Zellen ändern, Zeilen hinzufügen.
+        </p>
+        <div className="mt-6 flex flex-col gap-2">
+          <Button
             disabled={loading}
+            onClick={() =>
+              void run(async () => {
+                onOpen(await openDemoProject());
+              })
+            }
           >
-            {loading ? "…" : "Open project"}
-          </button>
-          <button
-            type="button"
-            className="welcome-btn"
-            onClick={handleCreate}
+            {loading ? "…" : "Testprojekt öffnen"}
+          </Button>
+          <Button
+            variant="outline"
             disabled={loading}
+            onClick={() =>
+              void run(async () => {
+                const selected = await open({
+                  multiple: false,
+                  filters: [{ name: "Dadix Project", extensions: ["dadix"] }],
+                });
+                if (typeof selected === "string") {
+                  onOpen(await openProject(selected));
+                }
+              })
+            }
           >
-            {loading ? "…" : "Create project"}
-          </button>
+            Projekt öffnen
+          </Button>
+          <Button
+            variant="outline"
+            disabled={loading}
+            onClick={() =>
+              void run(async () => {
+                const path = await save({
+                  defaultPath: "Unbenannt.dadix",
+                  filters: [{ name: "Dadix Project", extensions: ["dadix"] }],
+                });
+                if (path) onOpen(await createProject(path));
+              })
+            }
+          >
+            Leeres Projekt
+          </Button>
         </div>
-        {error && <p className="welcome-error">{error}</p>}
+        {error && <p className="mt-4 text-sm text-destructive">{error}</p>}
       </div>
     </div>
   );

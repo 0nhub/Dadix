@@ -8,6 +8,8 @@ export const dadixEvents = {
     onCreate: 'dadix-table-created',
     onPatch: 'dadix-table-patched',
     onDelete: 'dadix-table-deleted',
+    /** Reload the project table list from the adapter/core. */
+    onRefetchTables: 'dadix-tables-refetch-request',
     /** Request TableContext to refetch current table (e.g. after adding field from Hidden fields). */
     onRefetchTable: 'dadix-table-refetch-request',
     // ----------------------------------------
@@ -35,6 +37,7 @@ export const dadixEvents = {
     // ----------------------------------------
     onOpen: 'dadix-record-opened',
     onClose: 'dadix-record-closed',
+    onEditCell: 'dadix-record-cell-edit',
     // ----------------------------------------
     onSelectionChange: 'dadix-records-selection-changed',
     onRequestRelativeRecord: 'dadix-request-relative-record-evnt',
@@ -47,6 +50,9 @@ export const dadixEvents = {
     // ----------------------------------------
     openSearch: 'dadix-view-open-search',
     closeSearch: 'dadix-view-close-search',
+  },
+  sourceEvents: {
+    onRelinked: 'dadix-source-relinked',
   },
   gridViewEvents: {
     onPatchField: 'dadix-gridView-fields-patched',

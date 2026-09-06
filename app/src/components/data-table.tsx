@@ -50,6 +50,7 @@ import { useCurrentProjectContext } from '@/context/CurrentProjectContext';
 import { LoadingIndicator } from '@/components/loading-indicator/LoadingIndicator';
 import { openEditTableFieldPanel } from '@/components/table-editor/EditTableFieldPanel';
 import { FormulaEval } from './formula-eval/FormulaEval';
+import { FileFieldControl } from '@/components/file-field/FileFieldControl';
 import { useTableContext } from '@/context/TableContext';
 import { useTableRowsContext } from '@/context/TableRowsContext';
 
@@ -71,9 +72,15 @@ export function DataTable() {
 
   const openRecordSheet = (record: Record<string, unknown>) => {
     if (!currentTableCtx.id) return;
+    const contextTable = currentTableCtx.table;
+    const tableFields =
+      contextTable?.fields?.length &&
+      String(contextTable.id) === String(currentTableCtx.id)
+        ? contextTable.fields
+        : [];
     openTableRecord({
       tableId: currentTableCtx.id,
-      tableFields: [...(currentTableCtx.table?.fields || [])],
+      tableFields: [...tableFields],
       record,
     });
   };
@@ -261,6 +268,20 @@ export function DataTable() {
                     fields={currentTableCtx.table?.fields || []}
                   />
                 </span>
+              );
+            case 'FILE':
+              return (
+                <FileFieldControl
+                  compact
+                  value={finalValue}
+                  onChange={(next) => {
+                    handleRecordChange({
+                      recordId: row.original.id as string | number,
+                      recordFieldName: field.name,
+                      value: next,
+                    });
+                  }}
+                />
               );
             case 'DATE':
               return finalValue ? (
@@ -452,28 +473,18 @@ export function DataTable() {
       const details = (evnt as CustomEvent).detail || {};
       if (
         !details ||
-        details.tableId !== currentTableCtx.id ||
+        String(details.tableId) !== String(currentTableCtx.id) ||
         !details.record
       ) {
         return;
       }
-      if (activeRecordId !== details.record.id) {
-        setActiveRecordId(details.record.id);
-      }
+      setActiveRecordId(details.record.id);
     }
 
     function handleCloseRecordEvent(evnt: Event) {
       const details = (evnt as CustomEvent).detail || {};
-      if (
-        !details ||
-        details.tableId !== currentTableCtx.id ||
-        !details.recordId
-      ) {
-        return;
-      }
-      if (activeRecordId !== details.recordId) {
-        return;
-      }
+      if (!details?.tableId) return;
+      if (String(details.tableId) !== String(currentTableCtx.id)) return;
       setActiveRecordId(undefined);
     }
   }, [activeRecordId, currentTableCtx.id]);

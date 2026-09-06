@@ -34,6 +34,19 @@ temp/
 *.sqlite
 *.db
 *.dadix
+*.dadix.lock
+
+# Local QA / webview debug leftovers
+.dadix-*-report.json
+.dadix-webview-debug.txt
+
+# Generated stress-test fixtures (20 GB class)
+.large-fixtures/
+
+# Local macOS app bundle (built with `npm run tauri -- build`)
+/Dadix.app
+.dadix-ui-script.json
+.dadix-ui-result.json
 
 # IDE
 .idea/

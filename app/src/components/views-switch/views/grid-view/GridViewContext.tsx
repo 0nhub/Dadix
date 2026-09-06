@@ -6,23 +6,10 @@ import { UserLocalStorage } from '@/lib/userLocalStorage';
 import { filtersToString, viewFieldToTableField } from '@/lib/utils';
 import { getView, patchView } from '@/lib/view';
 import { patchGridViewColumn } from '@/lib/views/gridView';
-import type { IDadixGridView, IDadixGridViewField, IFilter, ISortingRule, ISortingRules } from '@/types';
-import {
-  DEV_DEMO_VIEW,
-  DEV_DEMO_VIEW_2,
-  DEV_DEMO_VIEW_3,
-  DEV_DEMO_VIEW_4,
-  DEV_DEMO_TABLE_ID,
-  DEV_DEMO_TABLE_2_ID,
-  DEV_DEMO_TABLE_3_ID,
-  DEV_DEMO_TABLE_4_ID,
-  DEV_DEMO_VIEW_ID,
-  DEV_DEMO_VIEW_2_ID,
-  DEV_DEMO_VIEW_3_ID,
-  DEV_DEMO_VIEW_4_ID,
-  isDevDemoTable,
-  isDevTable,
-} from '@/lib/dev-demo-data';
+import type { Field, IDadixGridView, IDadixGridViewField, IFilter, ISortingRule, ISortingRules } from '@/types';
+import { findLocalView, isDevTable, tableFieldsToGridViewFields, usesLocalViews } from '@/lib/dev-demo-data';
+import tableService from '@/lib/table';
+import { useLanguage } from '@/context/LanguageContext';
 // import { useSearchParams } from 'next/navigation';
 import {
   createContext,
@@ -32,6 +19,52 @@ import {
   useRef,
   useState,
 } from 'react';
+
+function parseJsonArray(raw: unknown): unknown {
+  if (Array.isArray(raw)) return raw;
+  if (raw && typeof raw === 'object') return raw;
+  if (typeof raw !== 'string' || !raw.trim()) return [];
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return [];
+  }
+}
+
+function parseViewFilters(raw: unknown): IFilter[] {
+  const parsed = parseJsonArray(raw);
+  return Array.isArray(parsed) ? (parsed as IFilter[]) : [];
+}
+
+function parseViewSort(raw: unknown): ISortingRules {
+  const parsed = parseJsonArray(raw);
+  const asRule = (value: unknown): ISortingRule | null => {
+    if (!value || typeof value !== 'object') return null;
+    const fieldId = Number((value as ISortingRule).fieldId);
+    const direction = (value as ISortingRule).direction;
+    if (!Number.isFinite(fieldId) || (direction !== 'ASC' && direction !== 'DESC')) {
+      return null;
+    }
+    return { fieldId, direction };
+  };
+  if (Array.isArray(parsed)) {
+    return parsed.map(asRule).filter((rule): rule is ISortingRule => rule != null);
+  }
+  const single = asRule(parsed);
+  return single ? [single] : [];
+}
+
+function cacheMatchesView(
+  cached: { view?: IDadixGridView } | undefined,
+  tableId: string | undefined,
+  viewId: string | number | undefined
+): boolean {
+  return (
+    !!cached?.view &&
+    String(cached.view.id) === String(viewId) &&
+    String(cached.view.tableId) === String(tableId)
+  );
+}
 
 interface IGridViewCtx {
   id: number | undefined;
@@ -84,9 +117,11 @@ export function GridViewContextProvider({
   globalFilter,
   children,
 }: GridViewContextProviderProps) {
+  const { t } = useLanguage();
   const viewIdRef = useRef<number | undefined>(undefined);
+  const tableIdRef = useRef<string | undefined>(undefined);
   const lastRequestViewId = useRef<number>(0);
-  const lastRequestedViewId = useRef<number>(undefined);
+  const lastRequestedKey = useRef<string | undefined>(undefined);
   const gridViewCacheRef = useRef<
     Record<string, { view: IDadixGridView; filters: IFilter[]; sort: ISortingRules }>
   >({});
@@ -138,12 +173,25 @@ export function GridViewContextProvider({
   // const viewId = useSearchParams().get('viewId');
 
   useEffect(() => {
-    if (`${viewIdRef.current}` === `${viewId}`) return;
+    const sameTarget =
+      `${viewIdRef.current}` === `${viewId}` &&
+      `${tableIdRef.current}` === `${tableId}`;
+    if (sameTarget) return;
     const cacheKey = `${tableId}-${viewId}`;
-    const hasCache = !!gridViewCacheRef.current[cacheKey];
-    viewIdRef.current = viewId ? parseInt(viewId) : undefined;
+    const cached = gridViewCacheRef.current[cacheKey];
+    viewIdRef.current = viewId ? parseInt(viewId, 10) : undefined;
+    tableIdRef.current = tableId;
     setError('');
-    if (!hasCache) {
+    if (cacheMatchesView(cached, tableId, viewId)) {
+      setGridView(cached.view);
+      setFilters(cached.filters);
+      setSortingRule(parseViewSort(cached.sort));
+      setIsLoading(false);
+      setInetialized(true);
+    } else {
+      setGridView(undefined);
+      setFilters([]);
+      setSortingRule([]);
       setInetialized(false);
       setIsLoading(true);
     }
@@ -152,23 +200,70 @@ export function GridViewContextProvider({
   useEffect(() => {
     if (initialized) return;
 
-    if (!viewId) {
+    if (!tableId) {
       return;
     }
-    if (viewIdRef.current === lastRequestedViewId.current) return;
-    lastRequestedViewId.current = viewIdRef.current;
+    const requestKey = `${tableId}-${viewId || ''}`;
+    if (lastRequestedKey.current === requestKey && initialized) return;
+    lastRequestedKey.current = requestKey;
 
-    const cacheKey = `${tableId}-${viewId}`;
+    const cacheKey = requestKey;
     const cached = gridViewCacheRef.current[cacheKey];
 
-    if (cached) {
+    if (!viewId) {
+      lastRequestViewId.current++;
+      const requestViewId = lastRequestViewId.current;
+      tableService
+        .getTable({
+          tableId: `${tableId}`,
+          projectId: '',
+        })
+        .then((tableRes) => {
+          if (requestViewId !== lastRequestViewId.current) return;
+          const tableFields = ((tableRes as { data?: { fields?: Field[] } })?.data?.fields ??
+            []) as Field[];
+          const fallback: IDadixGridView = {
+            id: 0,
+            tableId: String(tableId),
+            name: t('table.allEntries'),
+            icon: 'LayoutGrid',
+            order: 0,
+            filter: '[]',
+            sort: '[]',
+            type: 'gridView',
+            fields: tableFieldsToGridViewFields(tableFields),
+          };
+          gridViewCacheRef.current[cacheKey] = { view: fallback, filters: [], sort: [] };
+          setGridView(fallback);
+          setFilters([]);
+          setSortingRule([]);
+          setIsLoading(false);
+          setInetialized(true);
+        })
+        .catch(() => {
+          if (requestViewId !== lastRequestViewId.current) return;
+          setGridView({
+            id: 0,
+            tableId: String(tableId),
+            name: t('table.allEntries'),
+            icon: 'LayoutGrid',
+            order: 0,
+            filter: '[]',
+            sort: '[]',
+            type: 'gridView',
+            fields: [],
+          });
+          setIsLoading(false);
+          setInetialized(true);
+        });
+      return;
+    }
+
+    if (cacheMatchesView(cached, tableId, viewId)) {
       setGridView(cached.view);
       setFilters(cached.filters);
-      const sort = cached.sort;
-      setSortingRule(
-        Array.isArray(sort) ? sort : sort && typeof sort === 'object' && sort.fieldId != null && sort.direction ? [sort as ISortingRule] : []
-      );
-      UserLocalStorage.setViewId(`${viewId}`);
+      setSortingRule(parseViewSort(cached.sort));
+      UserLocalStorage.setViewId(`${viewId}`, tableId);
       setIsLoading(false);
       setInetialized(true);
     } else {
@@ -182,59 +277,37 @@ export function GridViewContextProvider({
     const requestViewId = lastRequestViewId.current;
     const requestedViewId = viewId;
 
-    if (isDevDemoTable(tableId)) {
-      const isTable4 = tableId === DEV_DEMO_TABLE_4_ID && parseInt(viewId) === DEV_DEMO_VIEW_4_ID;
-      const isTable3 = tableId === DEV_DEMO_TABLE_3_ID && parseInt(viewId) === DEV_DEMO_VIEW_3_ID;
-      const isTable2 = tableId === DEV_DEMO_TABLE_2_ID && parseInt(viewId) === DEV_DEMO_VIEW_2_ID;
-      const view = isTable4
-        ? { ...DEV_DEMO_VIEW_4, fields: DEV_DEMO_VIEW_4.fields?.sort((a, b) => (a.fieldOrder ?? a.order) - (b.fieldOrder ?? b.order)) }
-        : isTable3
-          ? { ...DEV_DEMO_VIEW_3, fields: DEV_DEMO_VIEW_3.fields?.sort((a, b) => (a.fieldOrder ?? a.order) - (b.fieldOrder ?? b.order)) }
-          : isTable2
-            ? { ...DEV_DEMO_VIEW_2, fields: DEV_DEMO_VIEW_2.fields?.sort((a, b) => (a.fieldOrder ?? a.order) - (b.fieldOrder ?? b.order)) }
-            : { ...DEV_DEMO_VIEW, fields: DEV_DEMO_VIEW.fields?.sort((a, b) => (a.fieldOrder ?? a.order) - (b.fieldOrder ?? b.order)) };
-      const key1 = `${DEV_DEMO_TABLE_ID}-${DEV_DEMO_VIEW_ID}`;
-      const key2 = `${DEV_DEMO_TABLE_2_ID}-${DEV_DEMO_VIEW_2_ID}`;
-      const key3 = `${DEV_DEMO_TABLE_3_ID}-${DEV_DEMO_VIEW_3_ID}`;
-      const key4 = `${DEV_DEMO_TABLE_4_ID}-${DEV_DEMO_VIEW_4_ID}`;
-      gridViewCacheRef.current[cacheKey] = { view, filters: [], sort: [] };
-      gridViewCacheRef.current[key1] = {
-        view: { ...DEV_DEMO_VIEW, fields: DEV_DEMO_VIEW.fields?.sort((a, b) => (a.fieldOrder ?? a.order) - (b.fieldOrder ?? b.order)) },
-        filters: [],
-        sort: [],
-      };
-      gridViewCacheRef.current[key2] = {
-        view: { ...DEV_DEMO_VIEW_2, fields: DEV_DEMO_VIEW_2.fields?.sort((a, b) => (a.fieldOrder ?? a.order) - (b.fieldOrder ?? b.order)) },
-        filters: [],
-        sort: [],
-      };
-      gridViewCacheRef.current[key3] = {
-        view: { ...DEV_DEMO_VIEW_3, fields: DEV_DEMO_VIEW_3.fields?.sort((a, b) => (a.fieldOrder ?? a.order) - (b.fieldOrder ?? b.order)) },
-        filters: [],
-        sort: [],
-      };
-      gridViewCacheRef.current[key4] = {
-        view: { ...DEV_DEMO_VIEW_4, fields: DEV_DEMO_VIEW_4.fields?.sort((a, b) => (a.fieldOrder ?? a.order) - (b.fieldOrder ?? b.order)) },
-        filters: [],
-        sort: [],
-      };
-      setGridView(view);
-      setFilters([]);
-      setSortingRule([]);
-      UserLocalStorage.setViewId(`${viewId}`);
-      setIsLoading(false);
-      setInetialized(true);
-      return;
+    if (usesLocalViews(tableId)) {
+      const local = findLocalView(tableId, viewId);
+      const fields = [...(local?.fields ?? [])].sort(
+        (a, b) => (a.fieldOrder ?? a.order) - (b.fieldOrder ?? b.order)
+      );
+      const view = local
+        ? { ...local, fields }
+        : undefined;
+      if (view) {
+        const filters = parseViewFilters(view.filter);
+        const sort = parseViewSort(view.sort);
+        gridViewCacheRef.current[cacheKey] = { view, filters, sort };
+        setGridView(view);
+        setFilters(filters);
+        setSortingRule(sort);
+        UserLocalStorage.setViewId(`${viewId}`, tableId);
+        setIsLoading(false);
+        setInetialized(true);
+        return;
+      }
     }
 
     getView({
       tableId: `${tableId}`,
       id: parseInt(viewId),
     })
-      .then((res) => {
+      .then(async (res) => {
         if (
           requestViewId !== lastRequestViewId.current ||
-          `${viewIdRef.current}` !== `${requestedViewId}`
+          `${viewIdRef.current}` !== `${requestedViewId}` ||
+          `${tableIdRef.current}` !== `${tableId}`
         ) {
           return;
         }
@@ -249,33 +322,34 @@ export function GridViewContextProvider({
           ),
         };
         let filters: IFilter[] = [];
-        let sort: ISortingRules = [];
+        const sort = parseViewSort((res as Record<string, unknown>)?.sort);
         try {
           const filterStr = (res as Record<string, unknown>)?.filter as string;
           filters = JSON.parse(filterStr || '[]');
-          const sortStr = (res as Record<string, unknown>)?.sort as string;
-          const parsed = JSON.parse(sortStr || '[]');
-          if (Array.isArray(parsed)) {
-            sort = parsed.filter(
-              (r: unknown) =>
-                r &&
-                typeof r === 'object' &&
-                'fieldId' in r &&
-                'direction' in r
-            ) as ISortingRules;
-          } else if (
-            parsed &&
-            typeof parsed === 'object' &&
-            parsed.fieldId != null &&
-            parsed.direction
-          ) {
-            sort = [parsed as ISortingRule];
-          }
         } catch (err) {
           console.warn('Error while parsing grid view filters', err);
         }
         const pendingNewColumns = pendingNewColumnsRef.current[cacheKey];
         let finalView = view;
+        try {
+          const tableRes = await tableService.getTable({
+            tableId: `${tableId}`,
+            projectId: '',
+          });
+          const tableFields = ((tableRes as { data?: { fields?: Field[] } })?.data?.fields ??
+            []) as Field[];
+          if (tableFields.length) {
+            const have = new Set((finalView.fields || []).map((field) => Number(field.fieldId)));
+            const extras = tableFieldsToGridViewFields(
+              tableFields.filter((field) => !have.has(Number(field.id)))
+            );
+            if (extras.length) {
+              finalView = { ...finalView, fields: [...(finalView.fields || []), ...extras] };
+            }
+          }
+        } catch {
+          /* table fields are optional for the view payload */
+        }
         if (pendingNewColumns?.length) {
           const existingIds = new Set((view.fields || []).map((f) => f.fieldId));
           const toAdd = pendingNewColumns.filter((f) => !existingIds.has(f.fieldId));
@@ -297,12 +371,12 @@ export function GridViewContextProvider({
         setGridView(finalView);
         setFilters(filters);
         setSortingRule(sort);
-        UserLocalStorage.setViewId(`${viewId}`);
+        UserLocalStorage.setViewId(`${viewId}`, tableId);
         setIsLoading(false);
         setInetialized(true);
         return;
       })
-      .catch((err) => {
+      .catch(async (err) => {
         if (
           requestViewId !== lastRequestViewId.current ||
           `${viewIdRef.current}` !== `${requestedViewId}`
@@ -311,7 +385,42 @@ export function GridViewContextProvider({
         }
         console.error('fetch error:', err);
         setError(err.toString());
-        if (!cached) setIsLoading(false);
+        try {
+          const tableRes = await tableService.getTable({
+            tableId: `${tableId}`,
+            projectId: '',
+          });
+          const tableFields = ((tableRes as { data?: { fields?: Field[] } })?.data?.fields ??
+            []) as Field[];
+          const fallback: IDadixGridView = {
+            id: parseInt(viewId, 10),
+            tableId: String(tableId),
+            name: t('table.allEntries'),
+            icon: 'LayoutGrid',
+            order: 0,
+            filter: '[]',
+            sort: '[]',
+            type: 'gridView',
+            fields: tableFieldsToGridViewFields(tableFields),
+          };
+          setGridView(fallback);
+          setFilters([]);
+          setSortingRule([]);
+        } catch {
+          setGridView({
+            id: parseInt(viewId, 10),
+            tableId: String(tableId),
+            name: t('table.allEntries'),
+            icon: 'LayoutGrid',
+            order: 0,
+            filter: '[]',
+            sort: '[]',
+            type: 'gridView',
+            fields: [],
+          });
+        }
+        setIsLoading(false);
+        setInetialized(true);
         return;
       });
   }, [viewId, initialized, tableId]);
@@ -325,12 +434,22 @@ export function GridViewContextProvider({
         if (cancelled) return;
         const view = res as unknown as IDadixGridView;
         if (!view?.fields?.length) return;
+        if (
+          String(view.id) !== String(viewId) ||
+          String(view.tableId) !== String(tableId)
+        ) {
+          return;
+        }
+        const filters = parseViewFilters(view.filter);
+        const sort = parseViewSort(view.sort);
         gridViewCacheRef.current[`${tableId}-${viewId}`] = {
           view,
-          filters: [],
-          sort: [],
+          filters,
+          sort,
         };
         setGridView(view);
+        setFilters(filters);
+        setSortingRule(sort);
         setIsLoading(false);
         setInetialized(true);
       })
@@ -342,7 +461,13 @@ export function GridViewContextProvider({
 
   // keep grid view cache in sync when view/filters/sort change
   useEffect(() => {
-    if (gridView && tableId && viewId) {
+    if (
+      gridView &&
+      tableId &&
+      viewId &&
+      String(gridView.id) === String(viewId) &&
+      String(gridView.tableId) === String(tableId)
+    ) {
       gridViewCacheRef.current[`${tableId}-${viewId}`] = {
         view: gridView,
         filters,
@@ -355,10 +480,44 @@ export function GridViewContextProvider({
   useEffect(() => {
     const handler = async (evnt: Event) => {
       const { viewId: evViewId, tableId: evTableId } = (evnt as CustomEvent).detail || {};
-      if (!evViewId || !evTableId) return;
-      if (`${viewIdRef.current}` !== `${evViewId}` || `${tableId}` !== `${evTableId}`) return;
+      if (evTableId && `${tableId}` !== `${evTableId}` && `${tableIdRef.current}` !== `${evTableId}`) {
+        return;
+      }
+      const targetTableId = evTableId ?? tableId ?? tableIdRef.current;
+      const targetViewId = evViewId ?? viewIdRef.current ?? viewId;
+      if (!targetTableId) return;
+      if (targetViewId == null || `${targetViewId}` === '' || `${targetViewId}` === 'undefined') {
+        try {
+          const tableRes = await tableService.getTable({
+            tableId: `${targetTableId}`,
+            projectId: '',
+          });
+          const tableFields = ((tableRes as { data?: { fields?: Field[] } })?.data?.fields ??
+            []) as Field[];
+          setGridView((prev) => ({
+            id: prev?.id ?? 0,
+            tableId: String(targetTableId),
+            name: prev?.name ?? t('table.allEntries'),
+            icon: prev?.icon ?? 'LayoutGrid',
+            order: prev?.order ?? 0,
+            filter: prev?.filter ?? '[]',
+            sort: prev?.sort ?? '[]',
+            type: 'gridView',
+            fields: tableFieldsToGridViewFields(tableFields),
+            buttons: prev?.buttons,
+          }));
+          setIsLoading(false);
+          setInetialized(true);
+        } catch {
+          /* keep current view */
+        }
+        return;
+      }
+      if (evViewId && `${viewIdRef.current}` !== `${evViewId}` && `${viewId}` !== `${evViewId}`) {
+        return;
+      }
       try {
-        const res = await getView({ tableId: `${evTableId}`, id: parseInt(String(evViewId), 10) });
+        const res = await getView({ tableId: `${targetTableId}`, id: parseInt(String(targetViewId), 10) });
         if (!res || (res as { error?: boolean }).error) return;
         const view = {
           ...(res as unknown as IDadixGridView),
@@ -371,33 +530,40 @@ export function GridViewContextProvider({
           ),
         };
         let filters: IFilter[] = [];
-        let sort: ISortingRules = [];
+        const sort = parseViewSort((res as Record<string, unknown>)?.sort);
         try {
           const filterStr = (res as Record<string, unknown>)?.filter as string;
           filters = JSON.parse(filterStr || '[]');
-          const sortStr = (res as Record<string, unknown>)?.sort as string;
-          const parsed = JSON.parse(sortStr || '[]');
-          if (Array.isArray(parsed)) {
-            sort = parsed.filter(
-              (r: unknown) =>
-                r && typeof r === 'object' && 'fieldId' in r && 'direction' in r
-            ) as ISortingRules;
-          } else if (
-            parsed &&
-            typeof parsed === 'object' &&
-            (parsed as { fieldId: unknown }).fieldId != null &&
-            (parsed as { direction: unknown }).direction
-          ) {
-            sort = [parsed as ISortingRule];
-          }
         } catch {
           /* ignore */
         }
-        const cacheKey = `${evTableId}-${evViewId}`;
-        gridViewCacheRef.current[cacheKey] = { view, filters, sort };
-        setGridView(view);
+        let finalView = view;
+        try {
+          const tableRes = await tableService.getTable({
+            tableId: `${targetTableId}`,
+            projectId: '',
+          });
+          const tableFields = ((tableRes as { data?: { fields?: Field[] } })?.data?.fields ??
+            []) as Field[];
+          if (tableFields.length) {
+            const have = new Set((finalView.fields || []).map((field) => Number(field.fieldId)));
+            const extras = tableFieldsToGridViewFields(
+              tableFields.filter((field) => !have.has(Number(field.id)))
+            );
+            if (extras.length) {
+              finalView = { ...finalView, fields: [...(finalView.fields || []), ...extras] };
+            }
+          }
+        } catch {
+          /* table fields are optional */
+        }
+        const cacheKey = `${targetTableId}-${targetViewId}`;
+        gridViewCacheRef.current[cacheKey] = { view: finalView, filters, sort };
+        setGridView(finalView);
         setFilters(filters);
         setSortingRule(sort);
+        setIsLoading(false);
+        setInetialized(true);
       } catch {
         /* ignore refetch errors */
       }
@@ -422,6 +588,8 @@ export function GridViewContextProvider({
       const { viewId: evViewId, id, data } = (evnt as CustomEvent).detail || {};
       if (!evViewId || !id || !data) return;
       if (`${viewIdRef.current}` !== `${evViewId}`) return;
+      const eventTableId = (evnt as CustomEvent).detail?.tableId;
+      if (eventTableId && `${eventTableId}` !== `${tableIdRef.current}`) return;
 
       const detail = (evnt as CustomEvent).detail as { newField?: IDadixGridViewField; tableId?: string };
       const isNewColumnFromHidden = id < 0 && data?.id != null;
@@ -501,6 +669,7 @@ export function GridViewContextProvider({
             fieldsToBeUpdated[`${field.id}`] = {
               ...(fieldsToBeUpdated[`${field.id}`] || {}),
               order: field.order + reorderDirection,
+              fieldOrder: field.order + reorderDirection,
             };
             return null;
           });
@@ -577,10 +746,14 @@ export function GridViewContextProvider({
         data: { isVisible: true },
         silent: true,
       })
+        .catch((error) => {
+          console.error('[dadix] VIEW_COLUMN_UPDATE_FAILED after field create', error);
+          return { id: -data.id };
+        })
         .then((res) => {
           // res is response.data from API (created GridView row with id)
           const raw = res && typeof res === 'object' ? res : null;
-          const newId = raw != null && 'id' in raw ? Number((raw as { id: unknown }).id) : undefined;
+          const newId = raw != null && 'id' in raw ? Number((raw as { id: unknown }).id) : -data.id;
           if (newId == null || Number.isNaN(newId)) return;
           const newField: IDadixGridViewField = {
             ...data,
@@ -628,25 +801,10 @@ export function GridViewContextProvider({
                 ),
               };
               let filters: IFilter[] = [];
-              let sort: ISortingRules = [];
+              const sort = parseViewSort((viewRes as Record<string, unknown>)?.sort);
               try {
                 const filterStr = (viewRes as Record<string, unknown>)?.filter as string;
                 filters = JSON.parse(filterStr || '[]');
-                const sortStr = (viewRes as Record<string, unknown>)?.sort as string;
-                const parsed = JSON.parse(sortStr || '[]');
-                if (Array.isArray(parsed)) {
-                  sort = parsed.filter(
-                    (r: unknown) =>
-                      r && typeof r === 'object' && 'fieldId' in r && 'direction' in r
-                  ) as ISortingRules;
-                } else if (
-                  parsed &&
-                  typeof parsed === 'object' &&
-                  (parsed as { fieldId: unknown }).fieldId != null &&
-                  (parsed as { direction: unknown }).direction
-                ) {
-                  sort = [parsed as ISortingRule];
-                }
               } catch {
                 /* ignore */
               }
@@ -982,32 +1140,47 @@ export function GridViewContextProvider({
         fieldId: columnId,
         data,
       } = (evnt as CustomEvent).detail || {};
-      if (!gridView || `${gridView.tableId}` !== `${tableId}`) return;
+      if (
+        !data ||
+        (`${tableIdRef.current}` !== `${tableId}` && `${gridView?.tableId}` !== `${tableId}`)
+      ) {
+        return;
+      }
       const trackedAttributes = ['name', 'action'];
-      let updated = false;
       const updates: Record<string, unknown> = {};
-      Object.keys(data).map((attribute) => {
+      Object.keys(data).forEach((attribute) => {
         if (trackedAttributes.indexOf(attribute) >= 0) {
           updates[attribute] = data[attribute];
-          updated = true;
         }
-        return null;
       });
-      if (!updated) return; // trigger update only for tracked attributes
+      if (Object.keys(updates).length === 0) return;
 
-      setGridView({
-        ...gridView,
-        fields: gridView.fields
+      setGridView((prev) => {
+        if (!prev || `${prev.tableId}` !== `${tableId}`) return prev;
+        const fields = prev.fields
           ?.map((field) => {
             if (`${field.fieldId}` === `${columnId}`) {
+              const nextName =
+                typeof updates.name === 'string' && updates.name.trim()
+                  ? updates.name.trim()
+                  : field.fieldName;
               return {
                 ...field,
                 ...updates,
+                fieldName: nextName,
+                name: nextName,
               };
             }
             return field;
           })
-          .sort((field1, field2) => field1.order - field2.order),
+          .sort((field1, field2) => field1.order - field2.order);
+        const next = { ...prev, fields };
+        const cacheKey = `${prev.tableId}-${prev.id}`;
+        const cached = gridViewCacheRef.current[cacheKey];
+        if (cached) {
+          gridViewCacheRef.current[cacheKey] = { ...cached, view: next };
+        }
+        return next;
       });
     },
     [viewId, gridView]
@@ -1025,15 +1198,26 @@ export function GridViewContextProvider({
 
   function handleUpdateSortingRule(rules: ISortingRules) {
     if (!viewIdRef.current || !tableId) return;
-    const valid = Array.isArray(rules)
-      ? rules.filter((r) => r?.fieldId != null && r?.direction)
-      : [];
-    patchView({
+    const valid = parseViewSort(rules);
+    const sortJson = JSON.stringify(valid);
+    setSortingRule(valid);
+    setGridView((prev) => (prev ? { ...prev, sort: sortJson } : prev));
+    const cacheKey = `${tableId}-${viewIdRef.current}`;
+    const cached = gridViewCacheRef.current[cacheKey];
+    if (cached) {
+      gridViewCacheRef.current[cacheKey] = {
+        ...cached,
+        sort: valid,
+        view: { ...cached.view, sort: sortJson },
+      };
+    }
+    void patchView({
       id: viewIdRef.current,
       tableId,
-      data: { sort: JSON.stringify(valid) },
+      data: { sort: sortJson },
+    }).catch((err) => {
+      console.error('Failed to persist view sort', err);
     });
-    setSortingRule(valid);
   }
 
   return (

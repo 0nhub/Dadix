@@ -13,8 +13,12 @@
     "windows": [
       {
         "title": "Dadix",
-        "width": 800,
-        "height": 600
+        "width": 1280,
+        "height": 800,
+        "minWidth": 960,
+        "minHeight": 640,
+        "hiddenTitle": true,
+        "titleBarStyle": "Overlay"
       }
     ],
     "security": {
@@ -30,6 +34,20 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
+    ],
+    "fileAssociations": [
+      {
+        "ext": ["dadix"],
+        "name": "Dadix Project",
+        "description": "Dadix project document",
+        "mimeType": "application/vnd.dadix.project",
+        "role": "Editor",
+        "rank": "Owner",
+        "exportedType": {
+          "identifier": "net.dadix.desktop.dadix",
+          "conformsTo": ["public.data", "public.database"]
+        }
+      }
     ]
   }
 }

@@ -20,6 +20,7 @@ import { useTableContext } from '@/context/TableContext';
 import { useTableViewsContext } from '@/context/TableViewsContext';
 import { createNewViewDirect } from '@/lib/view';
 import { toast } from 'sonner';
+import { useLanguage } from '@/context/LanguageContext';
 
 const OPEN_EDIT_VIEWS_DIALOG_EVENT = 'dadix--open-edit-views-dialog-event';
 
@@ -27,6 +28,7 @@ export function ViewsEditorDialog() {
   const currentTableCtx = useTableContext();
   const tableViewsCtx = useTableViewsContext();
   const router = useRouter();
+  const { t } = useLanguage();
 
   const [isOpen, setIsOpen] = useState<boolean>(false);
 
@@ -36,7 +38,7 @@ export function ViewsEditorDialog() {
     createNewViewDirect(tableId, (tableViewsCtx.views || []).length).catch(
       (err) => {
         console.error(err);
-        const msg = (err as { response?: { data?: { message?: string } }; message?: string })?.response?.data?.message ?? (err as Error)?.message ?? 'View konnte nicht erstellt werden.';
+        const msg = (err as { response?: { data?: { message?: string } }; message?: string })?.response?.data?.message ?? (err as Error)?.message ?? t('table.viewCreateFailed');
         toast.error(msg);
       }
     );
