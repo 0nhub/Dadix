@@ -1,0 +1,20 @@
+---
+description: Dadix architecture, product path, and hard invariants
+alwaysApply: true
+---
+
+# Dadix
+
+Two products share `app/src`: Web (`app/`, :3000/:6127) and Desktop (`dadix-desktop/` + `crates/dadix-core`).
+
+Desktop path only: `app/src` → `bridge/callApi.ts` → `lib/dadix.ts` → `dadix_*` → `dadix-core` → SQLite `.dadix` / DuckDB RAM.
+
+Before structural work read `docs/README.md` and `AGENTS.md`.
+
+- Project logic in `dadix-core`. Tauri commands stay thin.
+- Never import `@tauri-apps/api` from `app/src`. Use `desktopShell.ts` / `window.__dadix*`.
+- Do not build a second desktop workspace UI. Ignore `dadix-desktop/src/components/workspace/`.
+- Product proof is built `Dadix.app`, not `tauri dev`. Keep `frontendDist: ../dist`.
+- No secrets in `.dadix`. No auto `*.duckdb`. No bind-all + DESCRIBE on open.
+- macOS: hide only the three traffic-light buttons; never the superview; no `trafficLightPosition`; no native titlebar `setFrame` to 44px.
+- `ViewsSwitch` must call `useLanguage()`. Open URL via `openExternalUrl`, not `window.open`.

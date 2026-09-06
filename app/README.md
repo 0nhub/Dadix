@@ -1,6 +1,9 @@
-# Dadix
+# Dadix Web (`app/`)
 
-Eine App: Backend (Express) + Frontend (Next.js). Alles in diesem Ordner.
+Backend (Express :6127) + Frontend (Next.js :3000). `src/` ist außerdem die **geteilte UI** der Desktop-App.
+
+Gesamtdoku: [../docs/README.md](../docs/README.md) · [../docs/web.md](../docs/web.md) · [../docs/shared-ui.md](../docs/shared-ui.md).  
+`src/` darf `@tauri-apps/api` nicht importieren.
 
 ## Struktur
 

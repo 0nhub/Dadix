@@ -1,8 +1,22 @@
 # Dadix Architecture Directive
 
+Vollständige Repo-Doku (Struktur, UI, Commands, Build, QA, AI): [README.md](./README.md).  
+PR-Checkliste: [COMPATIBILITY.md](./COMPATIBILITY.md). Konventionen: [conventions.md](./conventions.md). Agent-Vertrag: [../AGENTS.md](../AGENTS.md).
+
 Dadix is a local-first data platform. The desktop app must run fully offline on Windows, macOS, and Linux. Network features are extensions and must never be required for local use.
 
 This document is binding for new work. Web (`app/`) remains the browser/cloud line. Desktop (`dadix-desktop/`) is the Tauri 2 line. Do not embed Next.js or Express inside the `.exe`.
+
+Required desktop path (do not invent a second shell):
+
+```
+app/src (shared React UI)
+  → dadix-desktop/src/bridge/callApi.ts
+  → dadix-desktop/src/lib/dadix.ts
+  → Tauri dadix_* commands
+  → crates/dadix-core
+  → SQLite (.dadix) + DuckDB (:memory:)
+```
 
 ## Target stack
 
@@ -150,7 +164,7 @@ Must work without network: open project, tables, edit, views, filters, local fil
 ## 13. Two products in this repo
 
 - [`crates/dadix-core`](../crates/dadix-core) — Rust project core (CLI-ready; no GUI stack).
-- [`app/`](../app/) — Next.js + Express for browser/cloud. Do not grow `localStorage` as real persistence. Do not add desktop-only logic there.
-- [`dadix-desktop/`](../dadix-desktop/) — Tauri 2 desktop shell. Calls `dadix-core` only.
+- [`app/`](../app/) — Next.js + Express for browser/cloud, and the shared React UI. Do not grow `localStorage` as real persistence. Do not import Tauri APIs here.
+- [`dadix-desktop/`](../dadix-desktop/) — Tauri 2 desktop shell. Thin commands only; all project logic stays in `dadix-core`.
 
-Existing React components in `app/src/components/` can be ported incrementally. `callApi` and Express are not used on desktop.
+The product UI is `app/src` mounted from `dadix-desktop/src/App.tsx`. Desktop maps Express-shaped `callApi` to `dadix_*` invokes (`src/bridge/`). Express itself does not run inside the `.app`. The leftover tree `dadix-desktop/src/components/workspace/` is not the product path.

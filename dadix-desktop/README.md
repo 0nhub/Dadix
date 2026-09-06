@@ -2,6 +2,10 @@
 
 Local-first desktop app for Dadix. One project = one `.dadix` file (SQLite). No server required.
 
+Repo-Dokumentation (verbindlich): [../docs/README.md](../docs/README.md) · [../docs/desktop.md](../docs/desktop.md) · [../docs/build.md](../docs/build.md) · [../AGENTS.md](../AGENTS.md).
+
+The product is the **built** `Dadix.app`, not `tauri dev`. Shared UI lives in `../app/src`; this folder is the Tauri shell and adapter only.
+
 ## Prerequisites
 
 - [Node.js](https://nodejs.org/) (LTS)
